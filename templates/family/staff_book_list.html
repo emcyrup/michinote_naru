@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}連絡帳（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}連絡帳{% endblock %}
+{% block nav_family_book %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .dayitem.is-sent { border-color: #b7dfc0; background: #f3fbf5; }
+  .dayitem.is-sent .dayitem-name { color: #1e6b33; }
+  /* 印が多いとき（保護者より・保護者確認済み・送信済み）は、名前を折らずに、印を次の段へ送る */
+  .dayitem { flex-wrap: wrap; row-gap: 6px; position: relative; padding-right: 40px; }
+  .dayitem > .bi-chevron-right { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); }
+  .dayitem-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dayitem-marks { display: flex; gap: 6px; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+  .dayitem-state.is-note { background: #e8f0fb; color: #23508f; }
+  .dayitem-state.is-read { background: #e3f3e6; color: #1e6b33; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% include 'includes/day_nav.html' %}
+
+  {% if rows %}
+  <ul class="daylist">
+    {% for r in rows %}{% include 'family/_staff_book_row.html' %}{% endfor %}
+  </ul>
+  {% else %}
+  <div class="day-empty">この日に来る予定の子はいません。<div class="small mt-1"><a href="{% url 'schedules:calendar' %}">予定</a>に来所予定を入れると、ここに並びます。</div></div>
+  {% endif %}
+
+  {% if extra_rows %}
+  <div class="daylist-head">予定には無いが、この日の連絡帳・保護者からの文がある子</div>
+  <ul class="daylist">{% for r in extra_rows %}{% include 'family/_staff_book_row.html' %}{% endfor %}</ul>
+  {% endif %}
+
+  {% if absent_rows %}
+  <div class="daylist-head">欠席（{{ absent_rows|length }} 人）</div>
+  <ul class="daylist">{% for r in absent_rows %}{% include 'family/_staff_book_row.html' with absent=True %}{% endfor %}</ul>
+  {% endif %}
+
+  {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_icons' %}" class="small"><i class="bi bi-chevron-left"></i> ホームへ</a></div>{% endif %}
+</div>
+{% endblock %}

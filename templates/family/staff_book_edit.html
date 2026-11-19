@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}連絡帳 {{ b.full_name }}（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}連絡帳{% endblock %}
+{% block nav_family_book %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .bk-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; padding: 14px; }
+  .bk-name { font-size: 1.2rem; font-weight: 700; }
+  .bk-from { background: #eef4fc; border: 1px solid #cfdff4; border-radius: 12px; padding: 12px 14px; }
+  .bk-from + .bk-from { margin-top: 8px; }
+  .bk-text { white-space: pre-wrap; font-size: 1.02rem; }
+  .bk-meta { font-size: .78rem; color: #777; }
+  .bk-state { font-size: .82rem; padding: 2px 10px; border-radius: 999px; background: #f1eee8; color: #555; }
+  .bk-state.ok { background: #e3f3e6; color: #1e6b33; }
+  .bk-state.draft { background: #fff3d6; color: #8a5a00; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_book' %}?date={{ day|date:'Y-m-d' }}" class="small"><i class="bi bi-chevron-left"></i> {{ day|date:'n月j日' }} の一覧へ</a></div>
+  {% include 'includes/day_nav.html' %}
+
+  <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+    <span class="bk-name">{{ b.full_name }} <small class="fw-normal text-muted">さん</small></span>
+    {% if visit and visit.status == 'absent' %}<span class="bk-state">この日は欠席</span>{% elif not visit %}<span class="bk-state">この日の来所予定なし</span>{% endif %}
+    {% if book and book.is_sent %}<span class="bk-state ok"><i class="bi bi-check-circle-fill"></i> 送信済み（{{ book.sent_at|date:'n/j H:i' }}）</span>
+      {% if book.is_read %}<span class="bk-state ok"><i class="bi bi-check2-all"></i> 保護者確認済み（{{ book.read_at|date:'n/j H:i' }}{% if book.read_by %}・{{ book.read_by }}{% endif %}）</span>{% else %}<span class="bk-state">保護者はまだ確認していません</span>{% endif %}
+    {% elif book and book.body %}<span class="bk-state draft"><i class="bi bi-pencil-fill"></i> 下書き</span>{% endif %}
+  </div>
+
+  <div class="daylist-head">保護者より（{{ day|date:'n月j日' }}）</div>
+  {% for n in notes %}
+  <div class="bk-from"><div class="bk-text">{{ n.body }}</div><div class="bk-meta mt-1">{{ n.created_at|date:'n/j H:i' }} {{ n.sender_name }}</div></div>
+  {% empty %}
+  <div class="bk-meta ms-1">この日の保護者からの連絡帳はありません。</div>
+  {% endfor %}
+
+  <div class="daylist-head">{{ request.user.facility.name }} より（保護者に送る文）</div>
+  {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
+  <form method="post" class="bk-card" id="bk-form">
+    {% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+    <textarea name="body" id="bk-body" class="form-control" rows="8" maxlength="{{ body_max }}" style="font-size:1rem;"
+              placeholder="例：今日は公園へ出かけました。すべり台を何度も楽しんでいました。おやつも完食です。">{% if draft %}{{ draft }}{% elif book %}{{ book.body }}{% endif %}</textarea>
+    {% if journal_text %}
+    <div class="mt-2"><button type="button" class="btn btn-sm btn-outline-secondary" id="bk-copy"><i class="bi bi-clipboard-plus me-1"></i>日誌の「保護者向けメッセージ」を写す</button>
+      <template id="bk-journal">{{ journal_text }}</template></div>
+    {% endif %}
+    {% if not line_linked %}<div class="bk-meta mt-2"><i class="bi bi-info-circle"></i> この子の保護者は、まだ公式 LINE につながっていません。送信しても、保護者が保護者ページを開けるようになるまで読まれません。</div>{% endif %}
+    <div class="d-flex gap-2 justify-content-end flex-wrap mt-3">
+      {% if not book or not book.is_sent %}<button type="submit" name="action" value="draft" class="btn btn-outline-secondary">下書き保存</button>{% endif %}
+      <button type="submit" name="action" value="send" class="btn btn-primary px-4" id="bk-send"><i class="bi bi-send me-1"></i>{% if book and book.is_sent %}送り直す{% else %}送信{% endif %}</button>
+    </div>
+    {% if book and book.is_sent %}<div class="bk-meta mt-2 text-end">送り直すと、保護者ページの文が差し替わり、保護者の確認は付け直しになります（LINE でもう一度知らせます）。</div>{% endif %}
+  </form>
+</div>
+<script>
+(function () {
+  var copy = document.getElementById('bk-copy'), body = document.getElementById('bk-body');
+  if (copy) copy.addEventListener('click', function () {
+    var text = document.getElementById('bk-journal').content.textContent;
+    if (body.value.trim() && !confirm('いま書いてある文のあとに、日誌の文を足しますか？')) return;
+    body.value = body.value.trim() ? body.value.replace(/\s+$/, '') + '\n' + text : text;
+    body.focus();
+  });
+  var dirty = false;
+  body.addEventListener('input', function () { dirty = true; });
+  document.getElementById('bk-form').addEventListener('submit', function () { dirty = false; });
+  window.addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+{% endblock %}

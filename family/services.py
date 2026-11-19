@@ -8,7 +8,7 @@ from django.utils import timezone
 from beneficiaries.models import Guardian
 from schedules.models import ScheduledVisit
 
-from .models import FamilyAccess, FamilyMessage
+from .models import ContactBook, FamilyAccess, FamilyMessage, ParentNote
 
 # 公式 LINE でこの言葉を送ると、保護者ページのリンクを返す（画面下のメニューのボタンにも同じ言葉を割り当てる）
 MENU_WORDS = ('メニュー', 'めにゅー', 'ホーム', 'ほーむ', '保護者ページ', 'マイページ', 'アプリ', 'MENU', 'HOME')
@@ -179,3 +179,124 @@ def inbox_for_day(facility, day):
     today_rows = list(base.filter(target_date=day).order_by('created_at', 'pk'))
     future_rows = list(base.filter(sent_on=day, target_date__gt=day, confirmed_at__isnull=True).order_by('target_date', 'created_at', 'pk'))
     return today_rows, future_rows
+
+
+# ---------------------------------------------------------------- 連絡帳
+# 保護者が「連絡帳（保護者より）」を書ける日：NOTE_BACK_DAYS 日前から NOTE_AHEAD_DAYS 日先まで（それより外は読むだけ）
+NOTE_BACK_DAYS = 7
+NOTE_AHEAD_DAYS = 14
+
+
+def note_writable(day):
+    today = timezone.localdate()
+    return today - datetime.timedelta(days=NOTE_BACK_DAYS) <= day <= today + datetime.timedelta(days=NOTE_AHEAD_DAYS)
+
+
+def book_url(access, base, child, day):
+    """LINE の知らせに貼るアドレス：入ってそのまま、その子・その日の「連絡帳（事業所より）」を開く"""
+    return f'{enter_url(access, base)}?to=book&c={child.pk}&date={day.isoformat()}'
+
+
+def save_book(facility, child, day, body, staff, send=False):
+    """
+    連絡帳（事業所より）を保存する。send=True で保護者に見えるようにする（送り直すと、保護者の確認は付け直しになる）。
+    返り値：(連絡帳, 今回の操作で新しく保護者に届いたか)
+    """
+    body = (body or '').strip()[:ContactBook.BODY_MAX]
+    with transaction.atomic():
+        book, _ = ContactBook.objects.select_for_update().get_or_create(
+            facility=facility, beneficiary=child, date=day)
+        changed = book.body != body
+        book.body = body
+        book.updated_by = staff
+        delivered = False
+        if send:
+            if not book.is_sent or changed:
+                book.status = ContactBook.STATUS_SENT
+                book.sent_at = timezone.now()
+                book.sent_by = staff
+                book.read_at = None
+                book.read_by = ''
+                book.line_notified = False
+                delivered = True
+        book.save()
+    return book, delivered
+
+
+def notify_book(book, base):
+    """
+    連絡帳が届いたことを、その子の保護者の LINE に知らせる（文そのものは送らず、保護者ページのリンクだけ）。
+    返り値：(知らせた人数, 送れなかった理由の並び)
+    """
+    from line_integration.sending import push_text
+    facility = book.facility
+    sent, errors = 0, []
+    if not (facility.use_line and facility.use_family_page):
+        return sent, errors
+    line_ids = []
+    for g in Guardian.objects.filter(beneficiary=book.beneficiary, line_linked=True).exclude(line_user_id=''):
+        if g.line_user_id not in line_ids:
+            line_ids.append(g.line_user_id)
+    for line_id in line_ids:
+        access = access_for(facility, line_id)
+        if access is None:
+            continue
+        text = (f'{book.beneficiary.full_name}さんの連絡帳（{book.date.month}月{book.date.day}日）が届きました。\n'
+                f'{book_url(access, base, book.beneficiary, book.date)}')
+        ok, why = push_text(facility, line_id, text)
+        if ok:
+            sent += 1
+        else:
+            errors.append(why)
+    if sent:
+        ContactBook.objects.filter(pk=book.pk).update(line_notified=True)
+    return sent, errors
+
+
+def mark_book_read(book, guardian):
+    """保護者がその日の連絡帳を開いた（最初の 1 回だけ記録する）"""
+    if book.is_sent and not book.is_read:
+        ContactBook.objects.filter(pk=book.pk, read_at__isnull=True).update(read_at=timezone.now(), read_by=sender_label(guardian))
+        return True
+    return False
+
+
+def unread_books(facility, child):
+    """その子の、送信ずみでまだ保護者が開いていない連絡帳（新しい順）"""
+    return ContactBook.objects.filter(facility=facility, beneficiary=child, status=ContactBook.STATUS_SENT,
+                                      read_at__isnull=True).order_by('-date')
+
+
+def add_parent_note(facility, child, guardian, day, body):
+    body = (body or '').strip()[:ParentNote.BODY_MAX]
+    if not body:
+        return None
+    return ParentNote.objects.create(facility=facility, beneficiary=child, date=day, body=body,
+                                     line_user_id=guardian.line_user_id, sender_name=sender_label(guardian))
+
+
+def book_rows(facility, day):
+    """
+    職員の「連絡帳」の 1 日ぶん：その日に来る子（coming）・欠席の子（absent）・予定に無いが連絡帳や保護者の文がある子（extra）。
+    各行に、連絡帳（book）と、保護者がその日に書いた文の数（notes）を付ける。
+    """
+    from schedules.daylist import day_visits
+    coming, absent = day_visits(facility, day)
+    books = {b.beneficiary_id: b for b in ContactBook.objects.filter(facility=facility, date=day).select_related('beneficiary')}
+    notes = {}
+    for n in ParentNote.objects.filter(facility=facility, date=day).select_related('beneficiary'):
+        notes.setdefault(n.beneficiary_id, []).append(n)
+
+    def row(child, visit):
+        return {'beneficiary': child, 'visit': visit, 'book': books.get(child.pk), 'notes': len(notes.get(child.pk, []))}
+
+    listed = {v.beneficiary_id for v in coming} | {v.beneficiary_id for v in absent}
+    extra = {}
+    for b_id, b in books.items():
+        if b_id not in listed and (b.is_sent or b.body):
+            extra[b_id] = b.beneficiary
+    for b_id, ns in notes.items():
+        if b_id not in listed:
+            extra[b_id] = ns[0].beneficiary
+    extra_rows = [row(c, None) for c in sorted(extra.values(), key=lambda c: (c.last_name_kana, c.first_name_kana, c.pk))]
+    return [row(v.beneficiary, v) for v in coming], [row(v.beneficiary, v) for v in absent], extra_rows

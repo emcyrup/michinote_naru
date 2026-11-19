@@ -535,7 +535,7 @@ class EditingView(LoginRequiredMixin, View):
 # =============================================
 # 作っていく順に、準備中の画面から本物の画面へ差し替える（url が None のものは「準備中」）
 STAFF_HOME_ICONS = [
-    {'key': 'renraku', 'label': '連絡帳', 'icon': 'bi-journal-text', 'url': None},
+    {'key': 'renraku', 'label': '連絡帳', 'icon': 'bi-journal-text', 'url': 'family:staff_book', 'needs': 'family_page'},
     {'key': 'nisshi', 'label': '日誌', 'icon': 'bi-pencil-square', 'url': 'records:day'},
     {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': 'family:staff_inbox', 'needs': 'family_page'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'reports:index'},

@@ -1,0 +1,6 @@
+{# 保護者ページの ←→（schedules.daylist.day_nav の値を渡す） #}
+<div class="fm-daynav" role="group" aria-label="日付の切り替え">
+  <a href="?date={{ prev_day|date:'Y-m-d' }}" aria-label="前の日"><i class="bi bi-chevron-left"></i></a>
+  <div class="d">{{ day|date:'n月j日' }}（{{ weekday }}）{% if is_today %}<span class="t">きょう</span>{% endif %}</div>
+  <a href="?date={{ next_day|date:'Y-m-d' }}" aria-label="次の日"><i class="bi bi-chevron-right"></i></a>
+</div>

@@ -345,6 +345,12 @@
       </li>
       {% if features.family_page %}
       <li>
+        <a class="sidebar-nav-item {% block nav_family_book %}{% endblock %}" href="{% url 'family:staff_book' %}">
+          <i class="bi bi-journal-text"></i>
+          <span>連絡帳</span>
+        </a>
+      </li>
+      <li>
         <a class="sidebar-nav-item {% block nav_family_inbox %}{% endblock %}" href="{% url 'family:staff_inbox' %}">
           <i class="bi bi-telephone"></i>
           <span>保護者からの連絡</span>
