@@ -102,6 +102,7 @@ jobs:
 
       - name: Checkout, prepare .env (first time only), migrate, restart gunicorn
         env:
+          GH_FETCH_TOKEN: ${{ github.token }}   # 非公開のリポジトリをサーバーで取るため（この実行の間だけ有効・読み取りだけ）
           SHA: ${{ inputs.ref || github.sha }}
           REPO_URL: https://github.com/${{ github.repository }}.git
           REMOTE_APP_DIR: ${{ env.APP_DIR }}
@@ -117,17 +118,29 @@ jobs:
           [[ "$DOMAIN" =~ ^[a-z0-9.-]+$ ]] || { echo "YASURAGI_DOMAIN はアドレス（英小文字・数字・. と - だけ）で入れてください"; exit 1; }
           [[ "$PORT_NUM" =~ ^[0-9]{4,5}$ ]] || { echo "YASURAGI_PORT は 4〜5 桁の数字で入れてください"; exit 1; }
           [[ "$DB_NAME_NEW" =~ ^[a-z0-9_]+$ ]] || { echo "YASURAGI_DB_NAME は英小文字・数字・_ だけで入れてください"; exit 1; }
-          ssh -i ~/.ssh/deploy_key -p "${{ env.SSH_PORT }}" "${{ secrets.YASURAGI_DEPLOY_USER || secrets.DEV_DEPLOY_USER }}@${{ secrets.YASURAGI_DEPLOY_HOST || secrets.DEV_DEPLOY_HOST }}" \
-            "SHA='$SHA' REPO_URL='$REPO_URL' APP_DIR_IN='$REMOTE_APP_DIR' VENV_IN='$REMOTE_VENV' SRC_DIR_IN='$SRC_APP_DIR' DOMAIN_IN='$DOMAIN' PORT_IN='$PORT_NUM' DB_IN='$DB_NAME_NEW' SHARE_IN='$SHARE_DB' bash -s" <<'REMOTE'
+          # 合い言葉はコマンド行（サーバーのプロセス一覧に出る）に書かず、標準入力の先頭で渡す
+          {
+            printf 'GH_FETCH_TOKEN=%q\n' "$GH_FETCH_TOKEN"
+            cat <<'REMOTE'
             set -euo pipefail
+            # 非公開のリポジトリから取るための合い言葉（この実行の間だけ有効・読み取りだけ）を、取るときの git にだけ渡す。
+            # ファイルにも、あとで起動するアプリの環境にも残さない
+            gitauth() {
+              if [ -n "${GH_FETCH_TOKEN:-}" ]; then
+                GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+                  GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_FETCH_TOKEN" | base64 | tr -d '\n')" git "$@"
+              else
+                GIT_TERMINAL_PROMPT=0 git "$@"
+              fi
+            }
             APP_DIR=$(eval echo "$APP_DIR_IN")
             VENV=$(eval echo "$VENV_IN")
             SRC_DIR=$(eval echo "$SRC_DIR_IN")
             if [ ! -d "$APP_DIR/.git" ]; then
-              git clone --quiet "$REPO_URL" "$APP_DIR"
+              gitauth clone --quiet "$REPO_URL" "$APP_DIR"
             fi
             cd "$APP_DIR"
-            git fetch --quiet origin
+            gitauth fetch --quiet origin
             # DB の取り違えを防ぐ：コトの開発環境の DB（kaigonotekyotaku）を使うときは、共用すると決めたときだけ進む
             DBN="$DB_IN"
             if [ -f .env ]; then DBN=$(grep -E '^DB_NAME=' .env | head -n 1 | cut -d= -f2- || true); fi
@@ -176,6 +189,8 @@ jobs:
             fi
             APP_DIR="$APP_DIR" VENV="$VENV" bash deploy/venv-deploy.sh "$SHA"
           REMOTE
+          } | ssh -i ~/.ssh/deploy_key -p "${{ env.SSH_PORT }}" "${{ secrets.YASURAGI_DEPLOY_USER || secrets.DEV_DEPLOY_USER }}@${{ secrets.YASURAGI_DEPLOY_HOST || secrets.DEV_DEPLOY_HOST }}" \
+            "SHA='$SHA' REPO_URL='$REPO_URL' APP_DIR_IN='$REMOTE_APP_DIR' VENV_IN='$REMOTE_VENV' SRC_DIR_IN='$SRC_APP_DIR' DOMAIN_IN='$DOMAIN' PORT_IN='$PORT_NUM' DB_IN='$DB_NAME_NEW' SHARE_IN='$SHARE_DB' bash -s"
 
       - name: Health check (public URL)
         run: |

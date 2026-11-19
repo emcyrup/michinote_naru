@@ -277,7 +277,13 @@ esac
 test -f .env || { echo "ERROR: $APP_DIR/.env がありません。deploy/.env.dev-aws.example（ゆあーずは deploy/.env.yours-aws.example、オウルは deploy/.env.owl-aws.example）を元に作成してください"; exit 1; }
 
 # 1) コード更新
-git fetch --quiet origin
+#    Actions から呼ぶときは、呼ぶ側が先に取ってある（リポジトリが非公開だと、ここからは合い言葉なしで取れない）。
+#    指定のコミットがもう手元にあれば取り直さない
+if [ -n "${1:-}" ] && git cat-file -e "$1^{commit}" 2>/dev/null; then
+  :
+else
+  GIT_TERMINAL_PROMPT=0 git fetch --quiet origin
+fi
 if [ -n "${1:-}" ]; then
   git checkout --quiet --force --detach "$1"
 else
