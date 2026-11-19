@@ -18,15 +18,15 @@ from beneficiaries.models import Guardian
 from line_integration.sending import push_text
 
 from . import services
-from .models import FamilyAccess, FamilyMessage
+from .models import ContactBook, FamilyAccess, FamilyMessage, ParentNote
 
 # 入場の印の有効期間（これを過ぎたら、LINE のリンクから入り直す）
 SESSION_DAYS = 30
 
 # 保護者のホームのアイコン（3 列）。作っていく順に、準備中から本物の画面へ差し替える
 FAMILY_ICONS = [
-    {'key': 'from_facility', 'label': '連絡帳\n{facility}より', 'icon': 'bi-journal-arrow-down'},
-    {'key': 'to_facility', 'label': '連絡帳\n保護者より', 'icon': 'bi-journal-arrow-up'},
+    {'key': 'from_facility', 'label': '連絡帳\n{facility}より', 'icon': 'bi-journal-arrow-down', 'url': 'family:book_from'},
+    {'key': 'to_facility', 'label': '連絡帳\n保護者より', 'icon': 'bi-journal-arrow-up', 'url': 'family:book_to'},
     {'key': 'absence', 'label': '欠席連絡', 'icon': '', 'text': '欠', 'url': 'family:absence'},
     {'key': 'message', 'label': 'その他の連絡', 'icon': 'bi-telephone', 'url': 'family:message'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check'},
@@ -62,6 +62,20 @@ class EnterView(View):
                                                  'at': timezone.now().isoformat()}
         request.session.pop('family_child', None)
         FamilyAccess.objects.filter(pk=access.pk).update(last_used_at=timezone.now())
+        # LINE の知らせから来たとき：その子・その日の連絡帳を開く（決まった行き先だけ。外のアドレスへは送らない）
+        if request.GET.get('to') == 'book':
+            from django.urls import reverse
+            try:
+                child_pk = int(request.GET.get('c', ''))
+            except ValueError:
+                child_pk = None
+            if child_pk in {g.beneficiary_id for g in services.guardians_of(access.facility, access.line_user_id)}:
+                request.session['family_child'] = child_pk
+            try:
+                day = datetime.date.fromisoformat(request.GET.get('date', '')).isoformat()
+            except ValueError:
+                day = ''
+            return _no_store(redirect(reverse('family:book_from') + (f'?date={day}' if day else '')))
         return _no_store(redirect('family:home'))
 
 
@@ -107,7 +121,11 @@ def _icons(facility):
 
 class HomeView(FamilyMixin, View):
     def get(self, request):
-        return render(request, 'family/home.html', {**self.base_context(), 'icons': _icons(self.facility)})
+        icons = _icons(self.facility)
+        unread = services.unread_books(self.facility, self.child).count()
+        for it in icons:
+            it['badge'] = unread if it['key'] == 'from_facility' else 0
+        return render(request, 'family/home.html', {**self.base_context(), 'icons': icons})
 
 
 class ChildSelectView(FamilyMixin, View):
@@ -187,6 +205,66 @@ class AbsenceView(ContactFormView):
 
 class MessageView(ContactFormView):
     kind = FamilyMessage.KIND_OTHER
+
+
+class BookFromView(FamilyMixin, View):
+    """連絡帳（事業所より）：日ごとに読む。←→ で前の日・次の日。開くと、職員の画面に「確認済み」と出る"""
+
+    def get(self, request):
+        from schedules.daylist import day_nav, parse_day
+        day = parse_day(request.GET.get('date'))
+        book = ContactBook.objects.filter(facility=self.facility, beneficiary=self.child, date=day,
+                                          status=ContactBook.STATUS_SENT).first()
+        recent = list(ContactBook.objects.filter(facility=self.facility, beneficiary=self.child, status=ContactBook.STATUS_SENT)
+                      .order_by('-date')[:14])
+        return render(request, 'family/book_from.html', {**self.base_context(), **day_nav(day), 'book': book, 'recent': recent})
+
+    def post(self, request):
+        """開いたことの記録（画面が出たあとに画面のスクリプトが送る。リンクの下見（プレビュー）では付かない）"""
+        from django.http import JsonResponse
+        try:
+            pk = int(request.POST.get('book', ''))
+        except ValueError:
+            pk = None
+        book = ContactBook.objects.filter(pk=pk, facility=self.facility, beneficiary=self.child,
+                                          status=ContactBook.STATUS_SENT).first()
+        if book is None:
+            return JsonResponse({'ok': False}, status=404)
+        guardian = next(g for g in self.guardians if g.beneficiary_id == self.child.pk)
+        services.mark_book_read(book, guardian)
+        book.refresh_from_db()
+        if request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': True, 'read_at': timezone.localtime(book.read_at).strftime('%-m/%-d %H:%M')})
+        from django.urls import reverse
+        return redirect(f'{reverse("family:book_from")}?date={book.date.isoformat()}')
+
+
+class BookToView(FamilyMixin, View):
+    """連絡帳（保護者より）：その日の子どもの様子・伝えたいことを書いて送る。←→ で前の日・次の日"""
+
+    def context(self, day, **extra):
+        from schedules.daylist import day_nav
+        notes = ParentNote.objects.filter(facility=self.facility, beneficiary=self.child, date=day)
+        return {**self.base_context(), **day_nav(day), 'notes': notes, 'writable': services.note_writable(day),
+                'body_max': ParentNote.BODY_MAX, **extra}
+
+    def get(self, request):
+        from schedules.daylist import parse_day
+        day = parse_day(request.GET.get('date'))
+        return render(request, 'family/book_to.html', self.context(day, sent=request.GET.get('sent') == '1'))
+
+    def post(self, request):
+        from django.urls import reverse
+        from schedules.daylist import parse_day
+        day = parse_day(request.POST.get('date'))
+        body = (request.POST.get('body') or '').strip()
+        if not services.note_writable(day):
+            return render(request, 'family/book_to.html', self.context(day, error='この日の連絡帳は、もう書けません。'), status=400)
+        if not body:
+            return render(request, 'family/book_to.html', self.context(day, error='内容を書いてください。'), status=400)
+        guardian = next(g for g in self.guardians if g.beneficiary_id == self.child.pk)
+        services.add_parent_note(self.facility, self.child, guardian, day, body)
+        return redirect(f'{reverse("family:book_to")}?date={day.isoformat()}&sent=1')
 
 
 class LeaveView(View):
@@ -292,3 +370,87 @@ class StaffConfirmView(LoginRequiredMixin, View):
             messages.success(request, text)
         from django.urls import reverse
         return redirect(f'{reverse("family:staff_inbox")}?date={back.isoformat()}')
+
+
+class StaffBookListView(LoginRequiredMixin, View):
+    """連絡帳（日ごと）：その日に来る子だけ。送信済み・保護者の確認・保護者からの文の有無が一目で分かる"""
+
+    def get(self, request):
+        from schedules.daylist import day_nav, parse_day
+        facility = request.user.facility
+        if facility is None or not facility.use_family_page:
+            raise Http404
+        day = parse_day(request.GET.get('date'))
+        rows, absent_rows, extra_rows = services.book_rows(facility, day)
+        sent = sum(1 for r in rows if r['book'] and r['book'].is_sent)
+        return render(request, 'family/staff_book_list.html', {
+            **day_nav(day), 'rows': rows, 'absent_rows': absent_rows, 'extra_rows': extra_rows,
+            'day_nav_note': f'送信済み {sent} / {len(rows)} 人',
+        })
+
+
+class StaffBookEditView(LoginRequiredMixin, View):
+    """連絡帳を書く（1 人・1 日）：上に、保護者がその日に書いた文。下書き保存／送信"""
+
+    def setup_objects(self, request, beneficiary_pk):
+        from beneficiaries.models import Beneficiary
+        from schedules.daylist import parse_day
+        facility = request.user.facility
+        if facility is None or not facility.use_family_page:
+            raise Http404
+        self.facility = facility
+        self.child = get_object_or_404(Beneficiary, pk=beneficiary_pk, facility=facility)
+        self.day = parse_day(request.POST.get('date') or request.GET.get('date'))
+
+    def context(self, **extra):
+        from schedules.daylist import day_nav
+        from schedules.models import ScheduledVisit
+        book = ContactBook.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first()
+        journal_text = ''
+        try:
+            from records.models import DailyRecord
+            rec = DailyRecord.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first()
+            journal_text = (rec.parent_message_draft or '').strip() if rec else ''
+        except Exception:  # noqa: BLE001
+            journal_text = ''
+        return {**day_nav(self.day), 'b': self.child, 'book': book,
+                'notes': ParentNote.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day),
+                'visit': ScheduledVisit.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first(),
+                'line_linked': self.child.guardians.filter(line_linked=True).exists(),
+                'journal_text': journal_text, 'body_max': ContactBook.BODY_MAX,
+                'day_nav_query': '', **extra}
+
+    def get(self, request, beneficiary_pk):
+        self.setup_objects(request, beneficiary_pk)
+        return render(request, 'family/staff_book_edit.html', self.context())
+
+    def post(self, request, beneficiary_pk):
+        from django.urls import reverse
+        self.setup_objects(request, beneficiary_pk)
+        body = (request.POST.get('body') or '').strip()
+        send = request.POST.get('action') == 'send'
+        if send and not body:
+            return render(request, 'family/staff_book_edit.html', self.context(error='内容を書いてから送信してください。', draft=body), status=400)
+        if not send:
+            # 送信済みの連絡帳は、保存だけでは書き換えない（保護者に見えている文が、知らせなしに変わらないように）
+            if ContactBook.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day,
+                                          status=ContactBook.STATUS_SENT).exists():
+                messages.info(request, '送信済みの連絡帳は「送り直す」で差し替えてください（下書きとしては保存していません）。')
+            else:
+                services.save_book(self.facility, self.child, self.day, body, request.user, send=False)
+                messages.success(request, '下書きを保存しました（保護者にはまだ見えません）。')
+            return redirect(f'{reverse("family:staff_book_edit", args=[self.child.pk])}?date={self.day.isoformat()}')
+        book, delivered = services.save_book(self.facility, self.child, self.day, body, request.user, send=True)
+        if delivered:
+            n, errors = services.notify_book(book, request.build_absolute_uri('/'))
+            text = f'{self.child.full_name} さんの連絡帳を送信しました。'
+            if n:
+                text += f'保護者の LINE に知らせました（{n} 人）。'
+            elif errors:
+                text += f'LINE での知らせは送れませんでした（{errors[0]}）。保護者ページには出ています。'
+            else:
+                text += '公式 LINE につながっている保護者がいないので、LINE での知らせは送っていません。'
+            messages.success(request, text)
+        else:
+            messages.info(request, '内容が変わっていないので、送り直していません。')
+        return redirect(f'{reverse("family:staff_book")}?date={self.day.isoformat()}')

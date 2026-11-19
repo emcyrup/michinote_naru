@@ -117,3 +117,75 @@ class FamilyMessage(models.Model):
         if self.is_absence:
             return f'欠席（{self.get_reason_display()}）' if self.reason else '欠席'
         return 'LINE のトークから' if self.via == self.VIA_LINE else 'その他の連絡'
+
+
+class ContactBook(models.Model):
+    """
+    連絡帳（事業所より）。1 件が「1 人の子の 1 日ぶん」。
+    職員が書いて「送信」すると保護者ページの「連絡帳（事業所名）より」に出る。下書きのあいだは保護者には見えない。
+    保護者がその日の連絡帳を開くと read_at が入り、職員の一覧に「確認済み」と出る。
+    日誌（records.DailyRecord）とは別のもの（日誌は事業所の中の記録。連絡帳は保護者に見せる文）。
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SENT = 'sent'
+    STATUS_CHOICES = [(STATUS_DRAFT, '下書き'), (STATUS_SENT, '送信済み')]
+    BODY_MAX = 2000
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='contact_books')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='contact_books', verbose_name='利用者')
+    date = models.DateField(verbose_name='日付')
+    body = models.TextField(blank=True, verbose_name='内容')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT, verbose_name='状態')
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name='送信した日時')
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='送信した職員')
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name='保護者が確認した日時')
+    read_by = models.CharField(max_length=120, blank=True, verbose_name='確認した保護者')
+    line_notified = models.BooleanField(default=False, verbose_name='LINE で知らせた')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+', verbose_name='最後に書いた職員')
+
+    class Meta:
+        verbose_name = '連絡帳（事業所より）'
+        verbose_name_plural = '連絡帳（事業所より）'
+        constraints = [models.UniqueConstraint(fields=['beneficiary', 'date'], name='contact_book_one_per_day')]
+        indexes = [models.Index(fields=['facility', 'date'], name='contact_book_day')]
+
+    def __str__(self):
+        return f'{self.date} {self.beneficiary}（{self.get_status_display()}）'
+
+    @property
+    def is_sent(self):
+        return self.status == self.STATUS_SENT
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+
+class ParentNote(models.Model):
+    """
+    連絡帳（保護者より）。保護者が、その日の子どもの様子・伝えたいことを書いて送る（1 日に何回送ってもよい）。
+    職員は、連絡帳を書く画面でその日のぶんを読む。確認の返事が要る連絡（欠席・お迎えの変更など）は FamilyMessage のほう。
+    """
+    BODY_MAX = 1000
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='parent_notes')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='parent_notes', verbose_name='利用者')
+    date = models.DateField(verbose_name='日付')
+    body = models.TextField(verbose_name='内容')
+    line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
+    sender_name = models.CharField(max_length=120, blank=True, verbose_name='送った保護者')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='送った日時')
+
+    class Meta:
+        verbose_name = '連絡帳（保護者より）'
+        verbose_name_plural = '連絡帳（保護者より）'
+        ordering = ['created_at', 'pk']
+        indexes = [models.Index(fields=['facility', 'date'], name='parent_note_day'),
+                   models.Index(fields=['beneficiary', 'date'], name='parent_note_child_day')]
+
+    def __str__(self):
+        return f'{self.date} {self.beneficiary}（保護者より）'

@@ -20,7 +20,7 @@ from records.models import DailyRecord
 from schedules.models import ScheduledVisit
 
 from . import services
-from .models import FamilyAccess, FamilyMessage
+from .models import ContactBook, FamilyAccess, FamilyMessage, ParentNote
 
 
 def _body(text, user_id='U1'):
@@ -90,7 +90,7 @@ class EnterTests(Base):
         # できた画面（欠席連絡・その他の連絡）は「準備中」を出さず、その画面へ
         self.assertRedirects(self.client.get(reverse('family:page', args=['absence'])), reverse('family:absence'))
         self.assertIn(f'href="{reverse("family:absence")}"', html)
-        self.assertEqual(html.count('class="fm-soon"'), 6)
+        self.assertEqual(html.count('class="fm-soon"'), 4)        # 連絡帳 2 つ・欠席連絡・その他の連絡はできている
         self.assertEqual(self.client.get(reverse('family:page', args=['nope'])).status_code, 404)
 
     def test_without_link_is_closed(self):
@@ -482,3 +482,191 @@ class ContactTests(Base):
         # 「メニュー」は連絡にしない
         self.line(self.f, 'secret-a', 'メニュー', user_id='U1')
         self.assertEqual(FamilyMessage.objects.count(), 2)
+
+
+class BookTests(Base):
+    """連絡帳：職員が書いて送信 → 保護者が読む → 職員に確認済み。保護者より → 職員の書く画面に出る"""
+
+    def setUp(self):
+        super().setUp()
+        self.today = timezone.localdate()
+        self.yesterday = self.today - datetime.timedelta(days=1)
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.taro, date=self.today, status='scheduled')
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.jiro, date=self.today, status='scheduled')
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.hana, date=self.today, status='absent')
+        self.enter()
+        self.client.post(reverse('family:child'), {'child': self.taro.pk})
+        self.sc = self.client_class()
+        self.sc.force_login(self.staff)
+
+    def edit_url(self, child, day=None):
+        return reverse('family:staff_book_edit', args=[child.pk]) + f'?date={(day or self.today).isoformat()}'
+
+    def send(self, child, body, day=None, action='send', push_ok=True):
+        with mock.patch('line_integration.sending.push_text', return_value=(push_ok, '' if push_ok else 'LINE のエラー')) as push:
+            res = self.sc.post(reverse('family:staff_book_edit', args=[child.pk]),
+                               {'date': (day or self.today).isoformat(), 'body': body, 'action': action}, follow=True)
+        return res, push
+
+    def test_staff_list_shows_only_scheduled_children_and_marks(self):
+        html = self.sc.get(reverse('family:staff_book')).content.decode()
+        self.assertIn('見本 太郎', html)
+        self.assertIn('架空 次郎', html)
+        self.assertIn('欠席（1 人）', html)
+        self.assertLess(html.index('欠席（1 人）'), html.index('見本 花子'))            # 欠席の子は下
+        self.assertIn('送信済み 0 / 2 人', html)
+        self.assertNotIn('dayitem is-sent', html)
+        self.send(self.taro, '今日は公園へ出かけました。')
+        html = self.sc.get(reverse('family:staff_book')).content.decode()
+        self.assertIn('送信済み 1 / 2 人', html)
+        self.assertEqual(html.count('dayitem is-sent'), 1)                              # 送った子だけ色が変わる
+        self.assertIn('<i class="bi bi-check-circle-fill"></i> 送信済み', html)
+        # ←→
+        self.assertIn(f'?date={self.yesterday.isoformat()}', html)
+        self.assertNotIn('見本 太郎', self.sc.get(reverse('family:staff_book') + f'?date={self.yesterday.isoformat()}').content.decode())
+
+    def test_draft_is_hidden_from_parent_until_sent(self):
+        res, push = self.send(self.taro, '下書きの文', action='draft')
+        self.assertContains(res, '下書きを保存しました')
+        self.assertFalse(push.called)
+        book = ContactBook.objects.get()
+        self.assertFalse(book.is_sent)
+        self.assertContains(self.sc.get(reverse('family:staff_book')), '下書き')
+        self.assertContains(self.client.get(reverse('family:book_from')), 'この日の連絡帳はありません')
+        res, push = self.send(self.taro, '今日は公園へ出かけました。')
+        self.assertContains(res, '連絡帳を送信しました')
+        book.refresh_from_db()
+        self.assertTrue(book.is_sent)
+        self.assertEqual(book.sent_by, self.staff)
+        self.assertContains(self.client.get(reverse('family:book_from')), '今日は公園へ出かけました。')
+        # 空のままは送れない
+        res, _ = self.send(self.jiro, '   ')
+        self.assertEqual(res.status_code, 400)
+
+    def test_send_notifies_line_with_link_only(self):
+        res, push = self.send(self.taro, '今日は公園へ出かけました。')
+        self.assertEqual(push.call_count, 1)                                            # 同じ LINE の人には 1 回
+        to, text = push.call_args[0][1], push.call_args[0][2]
+        self.assertEqual(to, 'U1')
+        access = FamilyAccess.objects.get(facility=self.f, line_user_id='U1')
+        self.assertIn(f'/family/enter/{access.token}/?to=book&c={self.taro.pk}&date={self.today.isoformat()}', text)
+        self.assertNotIn('公園', text)                                                  # 文そのものは LINE に流さない
+        self.assertContains(res, 'LINE に知らせました')
+        # LINE が送れなくても、連絡帳は保護者ページに出る
+        res, _ = self.send(self.hana, '花子さんの連絡帳', push_ok=False)
+        self.assertContains(res, 'LINE での知らせは送れませんでした')
+        self.assertTrue(ContactBook.objects.get(beneficiary=self.hana).is_sent)
+        # LINE 未連携の子
+        res, push = self.send(self.jiro, '次郎さんの連絡帳')
+        self.assertFalse(push.called)
+        self.assertContains(res, 'つながっている保護者がいない')
+
+    def test_link_from_line_opens_that_child_and_day(self):
+        self.send(self.hana, '花子さんの連絡帳', day=self.yesterday)
+        access = FamilyAccess.objects.get(facility=self.f, line_user_id='U1')
+        c = self.client_class()
+        res = c.get(reverse('family:enter', args=[access.token]) + f'?to=book&c={self.hana.pk}&date={self.yesterday.isoformat()}')
+        self.assertRedirects(res, reverse('family:book_from') + f'?date={self.yesterday.isoformat()}', fetch_redirect_response=False)
+        self.assertContains(c.get(res['Location']), '花子さんの連絡帳')
+        # ほかの家庭の子の番号・おかしな日付は無視する（外のアドレスへも送らない）
+        res = c.get(reverse('family:enter', args=[access.token]) + f'?to=book&c={self.jiro.pk}&date=nope&next=https://example.com/')
+        self.assertRedirects(res, reverse('family:book_from'), fetch_redirect_response=False)
+        self.assertNotContains(c.get(reverse('family:home')), '架空 次郎')
+
+    def test_parent_read_is_recorded_only_by_the_page_script_or_button(self):
+        self.send(self.taro, '今日は公園へ出かけました。')
+        book = ContactBook.objects.get()
+        home = self.client.get(reverse('family:home')).content.decode()
+        self.assertIn('class="fm-badge"', home)                                         # ホームに「まだ読んでいない」の数
+        page = self.client.get(reverse('family:book_from')).content.decode()
+        self.assertIn('確認しました', page)
+        book.refresh_from_db()
+        self.assertFalse(book.is_read)                                                  # 開いただけ（下見）では付かない
+        res = self.client.post(reverse('family:book_from'), {'book': book.pk}, HTTP_X_REQUESTED_WITH='fetch')
+        self.assertEqual(res.json()['ok'], True)
+        book.refresh_from_db()
+        self.assertTrue(book.is_read)
+        self.assertIn('見本 母', book.read_by)
+        first = book.read_at
+        self.client.post(reverse('family:book_from'), {'book': book.pk})                 # 2 回目は時刻を変えない
+        book.refresh_from_db()
+        self.assertEqual(book.read_at, first)
+        self.assertNotIn('class="fm-badge"', self.client.get(reverse('family:home')).content.decode())
+        # 職員の一覧と書く画面に「保護者確認済み」
+        self.assertContains(self.sc.get(reverse('family:staff_book')), '保護者確認済み')
+        self.assertContains(self.sc.get(self.edit_url(self.taro)), '保護者確認済み')
+
+    def test_resend_replaces_text_and_resets_read(self):
+        self.send(self.taro, '最初の文')
+        book = ContactBook.objects.get()
+        self.client.post(reverse('family:book_from'), {'book': book.pk})
+        # 送信済みは「下書き保存」では書き換わらない
+        res, _ = self.send(self.taro, 'こっそり書き換え', action='draft')
+        self.assertContains(res, '送り直す')
+        book.refresh_from_db()
+        self.assertEqual(book.body, '最初の文')
+        # 同じ文で送り直しても何もしない
+        res, push = self.send(self.taro, '最初の文')
+        self.assertFalse(push.called)
+        book.refresh_from_db()
+        self.assertTrue(book.is_read)
+        res, push = self.send(self.taro, '直した文')
+        self.assertTrue(push.called)
+        book.refresh_from_db()
+        self.assertEqual(book.body, '直した文')
+        self.assertFalse(book.is_read)
+        self.assertEqual(ContactBook.objects.count(), 1)
+
+    def test_parent_note_reaches_staff_edit_page(self):
+        html = self.client.get(reverse('family:book_to')).content.decode()
+        self.assertIn('見本 太郎 さんの様子・伝えたいこと', html)
+        self.assertIn('送信', html)
+        self.assertEqual(self.client.post(reverse('family:book_to'), {'date': self.today.isoformat(), 'body': ' '}).status_code, 400)
+        res = self.client.post(reverse('family:book_to'), {'date': self.today.isoformat(), 'body': '朝ごはんをよく食べました'})
+        self.assertRedirects(res, reverse('family:book_to') + f'?date={self.today.isoformat()}&sent=1', fetch_redirect_response=False)
+        note = ParentNote.objects.get()
+        self.assertEqual((note.beneficiary, note.date), (self.taro, self.today))
+        self.assertContains(self.client.get(reverse('family:book_to')), '朝ごはんをよく食べました')
+        # 職員：一覧に「保護者より」の印、書く画面に文
+        self.assertContains(self.sc.get(reverse('family:staff_book')), '保護者より')
+        edit = self.sc.get(self.edit_url(self.taro)).content.decode()
+        self.assertIn('朝ごはんをよく食べました', edit)
+        self.assertIn('見本 母', edit)
+        self.assertNotIn('朝ごはんをよく食べました', self.sc.get(self.edit_url(self.jiro)).content.decode())
+        # 前の日・次の日へ。書ける範囲の外は読むだけ
+        self.assertIn(f'?date={self.yesterday.isoformat()}', self.client.get(reverse('family:book_to')).content.decode())
+        old = self.today - datetime.timedelta(days=services.NOTE_BACK_DAYS + 1)
+        self.assertContains(self.client.get(reverse('family:book_to') + f'?date={old.isoformat()}'), 'もう書けません')
+        self.assertEqual(self.client.post(reverse('family:book_to'), {'date': old.isoformat(), 'body': 'x'}).status_code, 400)
+        self.assertEqual(ParentNote.objects.count(), 1)
+
+    def test_scope(self):
+        self.send(self.taro, '太郎さんの連絡帳')
+        book = ContactBook.objects.get()
+        # きょうだいの画面には出ない。ほかの子の連絡帳は確認にできない
+        self.client.post(reverse('family:child'), {'child': self.hana.pk})
+        self.assertNotContains(self.client.get(reverse('family:book_from')), '太郎さんの連絡帳')
+        self.assertEqual(self.client.post(reverse('family:book_from'), {'book': book.pk}, HTTP_X_REQUESTED_WITH='fetch').status_code, 404)
+        # よその事業所の職員
+        other_staff = StaffAccount.objects.create_user('other_admin2', password='pw12345678', facility=self.other, role=StaffAccount.ROLE_ADMIN)
+        c = self.client_class()
+        c.force_login(other_staff)
+        self.assertEqual(c.get(self.edit_url(self.taro)).status_code, 404)
+        self.assertNotContains(c.get(reverse('family:staff_book')), '見本 太郎')
+        # ログインなし・保護者ページを使わない事業所
+        self.assertEqual(self.client_class().get(reverse('family:staff_book')).status_code, 302)
+        self.f.use_family_page = False
+        self.f.save()
+        self.assertEqual(self.sc.get(reverse('family:staff_book')).status_code, 404)
+
+    def test_journal_parent_message_can_be_copied(self):
+        DailyRecord.objects.create(facility=self.f, beneficiary=self.taro, date=self.today, parent_message_draft='日誌に書いた保護者向けの文')
+        html = self.sc.get(self.edit_url(self.taro)).content.decode()
+        self.assertIn('日誌の「保護者向けメッセージ」を写す', html)
+        self.assertIn('日誌に書いた保護者向けの文', html)
+        self.assertNotIn('日誌の「保護者向けメッセージ」を写す', self.sc.get(self.edit_url(self.jiro)).content.decode())
+
+    def test_staff_home_icon_opens_book(self):
+        html = self.sc.get(reverse('facilities:home_icons')).content.decode()
+        self.assertIn(f'href="{reverse("family:staff_book")}"', html)
+        self.assertEqual(html.count('class="ih-soon"'), 1)                              # 残りは お知らせ だけ
