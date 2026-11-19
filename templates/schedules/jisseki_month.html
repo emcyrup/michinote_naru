@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}{{ child.full_name }} さんの実績記録票（{{ year }}年{{ month }}月） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}実績記録票{% endblock %}
+{% block nav_jisseki %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .jm-head { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .jm-name { font-size: 1.2rem; font-weight: 700; }
+  .jm-sum { display: flex; gap: 14px; flex-wrap: wrap; font-size: .9rem; color: #555; margin-top: 4px; }
+  .jm-sum b { color: #222; font-size: 1.05rem; }
+  .jm-sum .is-warn { color: #a15c00; }
+  .jm-table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
+  .jm-table th { background: #f3f0ea; font-size: .8rem; font-weight: 700; color: #555; padding: 8px 6px; text-align: center; white-space: nowrap; }
+  .jm-table td { padding: 6px; border-top: 1px solid #eee9e0; text-align: center; vertical-align: middle; font-variant-numeric: tabular-nums; }
+  .jm-table td.jm-day { white-space: nowrap; font-weight: 700; text-align: left; padding-left: 12px; }
+  .jm-table td.jm-day small { font-weight: 400; color: #777; }
+  .jm-table .is-sat .jm-day small { color: #2c63b0; } .jm-table .is-sun .jm-day small { color: #c0392b; }
+  .jm-table input[type=time] { width: 100%; min-width: 0; max-width: 130px; font-size: 1rem; padding: 6px 4px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; }
+  .jm-table tr.is-missing td { background: #fff6e2; }
+  .jm-table tr.is-missing input[type=time] { border-color: #e8b25a; }
+  .jm-table tr.is-absent td { background: #ececec; color: #777; }
+  .jm-table tr.is-today td.jm-day { box-shadow: 4px 0 0 var(--color-primary, #4e7ea8) inset; }
+  .jm-len { white-space: nowrap; }
+  .jm-ride { font-size: .78rem; color: #555; white-space: nowrap; }
+  .jm-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; margin-top: 10px; }
+  .jm-save .btn { width: 100%; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .jm-save { padding-right: 76px; } }
+  @media (max-width: 480px) {
+    .jm-ride-col { display: none; }
+    .jm-table { table-layout: fixed; }
+    .jm-table th:nth-child(1) { width: 25%; } .jm-table th:nth-child(4) { width: 15%; }
+    .jm-table td { padding: 6px 3px; } .jm-table td.jm-day { padding-left: 8px; }
+    .jm-table input[type=time] { font-size: .95rem; padding: 6px 2px; }
+    .jm-table input[type=time]::-webkit-calendar-picker-indicator { display: none; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="daynav" role="group" aria-label="月の切り替え">
+    <a href="{% url 'schedules:jisseki_month' child.pk prev_month.year prev_month.month %}{% if back %}?back={{ back }}{% endif %}" class="daynav-btn" aria-label="前の月"><i class="bi bi-chevron-left"></i></a>
+    <div class="daynav-day"><div class="daynav-date">{{ year }}年{{ month }}月</div></div>
+    <a href="{% url 'schedules:jisseki_month' child.pk next_month.year next_month.month %}{% if back %}?back={{ back }}{% endif %}" class="daynav-btn" aria-label="次の月"><i class="bi bi-chevron-right"></i></a>
+  </div>
+
+  <div class="jm-head mt-2">
+    <div class="jm-name">{{ child.full_name }} <small class="fw-normal text-muted">さん</small></div>
+    <div class="jm-sum">
+      <span>利用 <b>{{ days_used }}</b> 日</span>
+      {% if total %}<span>合計 <b>{{ total }}</b></span>{% endif %}
+      {% if days_absent %}<span>欠席 <b>{{ days_absent }}</b> 日</span>{% endif %}
+      {% if days_missing %}<span class="is-warn"><i class="bi bi-exclamation-triangle-fill"></i> 時間が未入力 <b>{{ days_missing }}</b> 日</span>{% endif %}
+    </div>
+  </div>
+
+  {% if rows %}
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="back" value="{{ back }}">
+    <table class="jm-table">
+      <thead><tr><th>日</th><th>始まり</th><th>終わり</th><th>時間</th><th class="jm-ride-col">送迎</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{% if r.absent %}is-absent{% elif r.missing %}is-missing{% endif %}{% if r.weekday == '土' %} is-sat{% elif r.weekday == '日' %} is-sun{% endif %}{% if r.visit.date|date:'Y-m-d' == back %} is-today{% endif %}">
+          <td class="jm-day">{{ r.visit.date|date:'j' }}日 <small>（{{ r.weekday }}）</small></td>
+          {% if r.absent %}
+          <td colspan="3">欠席</td>
+          {% else %}
+          <td><input type="time" name="s_{{ r.visit.pk }}" value="{{ r.start|time:'H:i' }}" step="300" aria-label="{{ r.visit.date|date:'j' }}日の始まり"></td>
+          <td><input type="time" name="e_{{ r.visit.pk }}" value="{{ r.end|time:'H:i' }}" step="300" aria-label="{{ r.visit.date|date:'j' }}日の終わり"></td>
+          <td class="jm-len">{{ r.length }}</td>
+          {% endif %}
+          <td class="jm-ride jm-ride-col">{% if not r.absent %}{% if r.visit.has_pickup %}迎え{% endif %}{% if r.visit.has_pickup and r.visit.has_dropoff %}・{% endif %}{% if r.visit.has_dropoff %}送り{% endif %}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="jm-save"><button type="submit" class="btn btn-primary">保存する</button></div>
+  </form>
+  {% else %}
+  <div class="day-empty mt-2">この月の来所予定はありません。<div class="small mt-1"><a href="{% url 'schedules:calendar_month' year month %}">予定</a>に来所予定を入れると、ここに並びます。</div></div>
+  {% endif %}
+
+  <div class="text-center mt-3">
+    <a href="{% url 'schedules:jisseki' %}{% if back %}?date={{ back }}{% endif %}" class="small"><i class="bi bi-chevron-left"></i> 日ごとの一覧へ</a>
+  </div>
+</div>
+{% endblock %}

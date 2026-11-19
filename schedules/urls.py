@@ -4,6 +4,11 @@ from . import views
 app_name = 'schedules'
 
 urlpatterns = [
+    # 実績記録票（日ごと・子どもごとの 1 か月ぶん）
+    path('jisseki/', views.JissekiDayView.as_view(), name='jisseki'),
+    path('jisseki/<int:beneficiary_pk>/', views.JissekiMonthView.as_view(), name='jisseki_child'),
+    path('jisseki/<int:beneficiary_pk>/<int:year>/<int:month>/', views.JissekiMonthView.as_view(), name='jisseki_month'),
+
     # 月表示カレンダー（当月 / 指定月）
     path('',
          views.CalendarView.as_view(), name='calendar'),

@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}実績記録票（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}実績記録票{% endblock %}
+{% block nav_jisseki %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .jz-row { padding: 0; gap: 0; align-items: stretch; }
+  .jz-check { display: flex; align-items: center; justify-content: center; flex: 0 0 56px; margin: 0; cursor: pointer; border-right: 1px solid #eee9e0; }
+  .jz-check input { width: 26px; height: 26px; cursor: pointer; }
+  .jz-link { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding: 12px 14px; color: inherit; text-decoration: none; flex-wrap: wrap; row-gap: 4px; position: relative; padding-right: 38px; }
+  .jz-link:hover { color: inherit; }
+  .jz-link > .bi-chevron-right { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+  .jz-link .dayitem-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .jz-time { margin-left: auto; font-size: 1.05rem; font-weight: 700; color: #1e6b33; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .jz-time small { font-weight: 400; color: #777; font-size: .75rem; }
+  .jz-row.is-done { border-color: #b7dfc0; background: #f3fbf5; }
+  .jz-row.is-warn { border-color: #e8b25a; background: #fff6e2; }
+  .jz-row.is-picked { box-shadow: 0 0 0 2px var(--color-primary, #4e7ea8) inset; }
+  .jz-warn { margin-left: auto; font-size: .85rem; font-weight: 700; color: #a15c00; white-space: nowrap; }
+  .jz-pad { flex: 0 0 56px; }
+  .jz-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 8px; font-size: .9rem; }
+  .jz-tools label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+  .jz-tools input { width: 22px; height: 22px; }
+  .jz-alert { background: #fff6e2; border: 1px solid #e8b25a; color: #7a4600; border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; font-size: .92rem; }
+  .jz-bar { position: sticky; bottom: 0; z-index: 1040; margin-top: 14px; background: #fff; border: 1px solid #cfd9e4; border-radius: 14px 14px 0 0; box-shadow: 0 -4px 14px rgba(0,0,0,.10); padding: 12px 14px; }
+  .jz-bar-head { font-weight: 700; margin-bottom: 8px; }
+  .jz-bar-times { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .jz-bar-times input[type=time] { flex: 1 1 110px; min-width: 0; font-size: 1.1rem; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 10px; }
+  .jz-bar-btns { display: flex; gap: 8px; margin-top: 10px; }
+  .jz-bar-btns .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 10px; }
+  /* 右下の丸いボタン（AI への質問）と重ならないように、狭い画面では右をあける */
+  @media (max-width: 900px) { .jz-bar-btns { padding-right: 72px; } }
+  /* スマホの幅でも、名前の右に時間が 1 行で入るように */
+  @media (max-width: 480px) {
+    .jz-check, .jz-pad { flex-basis: 48px; }
+    .jz-link { padding: 12px 30px 12px 10px; gap: 6px; }
+    .jz-link > .bi-chevron-right { right: 8px; }
+    .jz-time { font-size: .95rem; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% include 'includes/day_nav.html' %}
+
+  {% if warn_count %}
+  <div class="jz-alert"><i class="bi bi-exclamation-triangle-fill"></i> 連絡帳は送ったのに、時間が入っていない子が {{ warn_count }} 人います。</div>
+  {% endif %}
+
+  {% if rows %}
+  <form method="post" id="jz-form">
+    {% csrf_token %}
+    <input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+    <div class="jz-tools">
+      <label><input type="checkbox" id="jz-all"> すべて選ぶ</label>
+      <span class="text-muted small">名前を押すと 1 か月ぶんの表</span>
+    </div>
+    <ul class="daylist">
+      {% for r in rows %}
+      <li>
+        <div class="dayitem jz-row {% if r.warn %}is-warn{% elif r.done %}is-done{% endif %}">
+          <label class="jz-check"><input type="checkbox" name="visit" value="{{ r.visit.pk }}" aria-label="{{ r.beneficiary.full_name }} さんを選ぶ"></label>
+          <a class="jz-link" href="{% url 'schedules:jisseki_month' r.beneficiary.pk day.year day.month %}?back={{ day|date:'Y-m-d' }}">
+            <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+            {% if r.start or r.end %}
+              <span class="jz-time">({{ r.start|time:'H:i' }}〜{{ r.end|time:'H:i' }}){% if r.from_journal %}<small>日誌より</small>{% endif %}</span>
+            {% endif %}
+            {% if r.warn %}<span class="jz-warn"><i class="bi bi-exclamation-triangle-fill"></i> {% if r.partial %}終わりの時間が未入力{% else %}時間が未入力{% endif %}</span>
+            {% elif r.partial %}<span class="jz-warn">終わりの時間が未入力</span>{% endif %}
+            <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+          </a>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="jz-bar" id="jz-bar">
+      <div class="jz-bar-head"><span id="jz-count">チェックした子</span>に、まとめて時間を入れる</div>
+      <div class="jz-bar-times">
+        <input type="time" name="start" id="jz-start" aria-label="始まりの時間" step="300">
+        <span>〜</span>
+        <input type="time" name="end" id="jz-end" aria-label="終わりの時間" step="300">
+      </div>
+      <div class="jz-bar-btns">
+        <button type="submit" name="action" value="set" class="btn btn-primary">時間を入れる</button>
+        <button type="submit" name="action" value="clear" class="btn btn-outline-secondary" onclick="return confirm('チェックした子の時間を消します。よろしいですか？');">消す</button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <div class="day-empty">この日に来る予定の子はいません。<div class="small mt-1"><a href="{% url 'schedules:calendar' %}">予定</a>に来所予定を入れると、ここに並びます。</div></div>
+  {% endif %}
+
+  {% if absent_rows %}
+  <div class="daylist-head">欠席（{{ absent_rows|length }} 人）</div>
+  <ul class="daylist">
+    {% for r in absent_rows %}
+    <li>
+      <div class="dayitem jz-row is-absent">
+        <span class="jz-pad"></span>
+        <a class="jz-link" href="{% url 'schedules:jisseki_month' r.beneficiary.pk day.year day.month %}?back={{ day|date:'Y-m-d' }}">
+          <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+          <span class="dayitem-state" style="margin-left:auto;">欠席</span>
+          <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+        </a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_icons' %}" class="small"><i class="bi bi-chevron-left"></i> ホームへ</a></div>{% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  var form = document.getElementById('jz-form');
+  if (!form) return;
+  var boxes = [].slice.call(form.querySelectorAll('input[name=visit]'));
+  var all = document.getElementById('jz-all'), bar = document.getElementById('jz-bar'), count = document.getElementById('jz-count');
+  var start = document.getElementById('jz-start'), end = document.getElementById('jz-end');
+  function refresh() {
+    var n = 0;
+    boxes.forEach(function (b) { b.closest('.jz-row').classList.toggle('is-picked', b.checked); if (b.checked) n++; });
+    bar.hidden = n === 0;
+    count.textContent = 'チェックした ' + n + ' 人';
+    all.checked = n === boxes.length && n > 0;
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+  all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); refresh(); });
+  // 前に入れた時間を覚えておく（この端末だけ）
+  try {
+    var last = JSON.parse(localStorage.getItem('jz-last') || 'null');
+    if (last) { start.value = last.s || ''; end.value = last.e || ''; }
+  } catch (e) {}
+  form.addEventListener('submit', function () {
+    try { if (start.value) localStorage.setItem('jz-last', JSON.stringify({s: start.value, e: end.value})); } catch (e) {}
+  });
+  refresh();
+})();
+</script>
+{% endblock %}

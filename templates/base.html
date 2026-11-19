@@ -343,6 +343,14 @@
           <span>支援計画</span>
         </a>
       </li>
+      {% if features.home_icons %}
+      <li>
+        <a class="sidebar-nav-item {% block nav_jisseki %}{% endblock %}" href="{% url 'schedules:jisseki' %}">
+          <i class="bi bi-clipboard-check"></i>
+          <span>実績記録票</span>
+        </a>
+      </li>
+      {% endif %}
       {% if features.family_page %}
       <li>
         <a class="sidebar-nav-item {% block nav_family_book %}{% endblock %}" href="{% url 'family:staff_book' %}">
