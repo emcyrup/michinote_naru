@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'surveys',
     'daily',
     'consultation',
+    'mobile_api',  # 職員アプリ（iOS・Android）の API
 ]
 
 MIDDLEWARE = [
@@ -155,6 +156,10 @@ RESERVATION_SITE_URL = config('RESERVATION_SITE_URL', default='')
 if RESERVATION_ONLY:
     ROOT_URLCONF = 'config.urls_reservation'
     LOGIN_REDIRECT_URL = '/reservations/'
+
+# 職員アプリの API（/api/mobile/v1/）を、ブラウザ版（michinoteapp の Web 版）から使うときの置き場所。
+# 例：https://lite.example.jp（カンマ区切りで複数）。ここに入れたアドレスからの通信だけ CORS で通す。空ならブラウザからは使えない
+MOBILE_API_CORS_ORIGINS = [o.rstrip('/') for o in config('MOBILE_API_CORS_ORIGINS', default='', cast=Csv()) if o]
 
 ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
 # 活動→めあて・考察の生成に使うモデル（利用できない場合は .env で差し替える）
