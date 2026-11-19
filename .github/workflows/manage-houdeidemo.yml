@@ -12,6 +12,7 @@
 #   - set_media_root  : .env の MEDIA_ROOT を ~/michinotehoudei/media に直して Gunicorn を再起動する（写真・書類が 500 になるとき）
 #   - status / autostart_check / autostart_install / backup / backup_list / backup_check : Manage (yours) と同じ
 #   - disable_logins / enable_logins : その事業所の職員アカウントをまとめて無効／有効にする（facility_id）
+#   - family_page_on / family_page_off : 職員のホームをアイコンの並びにし、保護者ページ（公式 LINE から開く）を使う／やめる（facility_id。2026-11 成）
 #
 # パスワードは入力欄では受け取らない（入力欄の値は公開のログの「env:」にそのまま出るため）。
 # リポジトリの Secrets の HOUDEIDEMO_ADMIN_PASSWORD を使う（Secrets はログで伏せられる）。
@@ -27,7 +28,7 @@ on:
         type: choice
         required: true
         default: list
-        options: [create_facility, set_password, list, delete_facility, seed_demo, seed_demo_reset, billing_demo, billing_demo_remove, error_log, login_log, set_media_root, status, autostart_check, autostart_install, backup, backup_list, backup_check, disable_logins, enable_logins]
+        options: [create_facility, set_password, list, delete_facility, seed_demo, seed_demo_reset, billing_demo, billing_demo_remove, error_log, login_log, set_media_root, status, autostart_check, autostart_install, backup, backup_list, backup_check, disable_logins, enable_logins, family_page_on, family_page_off]
       facility_name:
         description: "事業所名（create_facility）"
         type: string
@@ -200,6 +201,11 @@ jobs:
                 [ -n "$FACILITY_ID" ] || { echo "facility_id を入れてください（list で確認）"; exit 1; }
                 # 事業所の職員をまとめて無効／有効にする（ユーザー名は出さず、件数だけ）
                 FACILITY_ID="$FACILITY_ID" TASK="$TASK" python manage.py shell -c "import os; from facilities.models import Facility; from accounts.models import StaffAccount; f = Facility.objects.get(pk=os.environ['FACILITY_ID']); on = os.environ['TASK'] == 'enable_logins'; n = StaffAccount.objects.filter(facility=f, is_active=not on).update(is_active=on); print(f'施設 {f.pk}「{f.name}」の職員アカウント {n} 件を', '有効に戻しました' if on else '無効にしました（ログインできません）')" ;;
+              family_page_on|family_page_off)
+                [ -n "$FACILITY_ID" ] || { echo "facility_id を入れてください（list で確認）"; exit 1; }
+                args=(family_page --facility "$FACILITY_ID")
+                [ "$TASK" = "family_page_off" ] && args+=(--off)
+                python manage.py "${args[@]}" ;;
               *) echo "unknown task: $TASK"; exit 1 ;;
             esac
           REMOTE

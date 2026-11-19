@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}日誌（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}日誌{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% include 'includes/day_nav.html' %}
+
+  {% if rows %}
+  <ul class="daylist">
+    {% for r in rows %}
+    <li>
+      <a class="dayitem" href="{% url 'records:list' r.beneficiary.pk %}{% if r.record %}?selected={{ r.record.pk }}{% else %}?new_date={{ day|date:'Y-m-d' }}{% endif %}">
+        <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+        {% if r.record and r.record.status == 'confirmed' %}<span class="dayitem-state is-done"><i class="bi bi-check-circle-fill"></i> 確定</span>
+        {% elif r.record %}<span class="dayitem-state is-draft"><i class="bi bi-pencil-fill"></i> 下書き</span>
+        {% else %}<span class="dayitem-state">まだ</span>{% endif %}
+        <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="day-empty">この日に来る予定の子はいません。<div class="small mt-1"><a href="{% url 'schedules:calendar' %}">予定</a>に来所予定を入れると、ここに並びます。</div></div>
+  {% endif %}
+
+  {% if extra_rows %}
+  <div class="daylist-head">予定には無いが、この日の日誌がある子</div>
+  <ul class="daylist">
+    {% for r in extra_rows %}
+    <li><a class="dayitem" href="{% url 'records:list' r.beneficiary.pk %}?selected={{ r.record.pk }}">
+      <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+      {% if r.record.status == 'confirmed' %}<span class="dayitem-state is-done"><i class="bi bi-check-circle-fill"></i> 確定</span>{% else %}<span class="dayitem-state is-draft"><i class="bi bi-pencil-fill"></i> 下書き</span>{% endif %}
+      <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i></a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if absent_rows %}
+  <div class="daylist-head">欠席（{{ absent_rows|length }} 人）</div>
+  <ul class="daylist">
+    {% for r in absent_rows %}
+    <li><a class="dayitem is-absent" href="{% url 'records:list' r.beneficiary.pk %}{% if r.record %}?selected={{ r.record.pk }}{% else %}?new_date={{ day|date:'Y-m-d' }}{% endif %}">
+      <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+      <span class="dayitem-state">欠席</span>
+      <i class="bi bi-chevron-right" aria-hidden="true"></i></a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="text-center mt-3"><a href="{% url 'records:dashboard' %}" class="small">週のカレンダーで見る</a></div>
+</div>
+{% endblock %}

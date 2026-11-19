@@ -6,6 +6,7 @@ app_name = 'records'
 urlpatterns = [
     path('', views.RecordsDashboardView.as_view(), name='dashboard'),
     path('simple/', views.SimpleHomeView.as_view(), name='simple_home'),
+    path('day/', views.DayListView.as_view(), name='day'),
     path('unwritten/', views.UnwrittenListView.as_view(), name='unwritten'),
     path('examples/', views.ExamplesView.as_view(), name='examples'),
     path('<int:pk>/good-example/', views.GoodExampleView.as_view(), name='good_example'),

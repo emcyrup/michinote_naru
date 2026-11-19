@@ -1,0 +1,26 @@
+{% extends 'family/base.html' %}
+{% block content %}
+{% if children|length > 1 %}
+<form method="post" action="{% url 'family:child' %}" class="fm-child">
+  {% csrf_token %}
+  <label for="fm-child" class="small text-muted text-nowrap">お子さま</label>
+  <select name="child" id="fm-child" class="form-select" onchange="this.form.submit()">
+    {% for c in children %}<option value="{{ c.pk }}" {% if c.pk == child.pk %}selected{% endif %}>{{ c.full_name }} さん</option>{% endfor %}
+  </select>
+  <noscript><button class="btn btn-outline-secondary btn-sm">切り替える</button></noscript>
+</form>
+{% endif %}
+<nav class="fm-icons" aria-label="メニュー">
+  {% for it in icons %}
+  <a href="{% url 'family:page' it.key %}">
+    <span class="fm-soon">準備中</span>
+    <span class="fm-icon">{% if it.icon %}<i class="bi {{ it.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ it.text }}</span>{% endif %}</span>
+    <span class="fm-label">{{ it.label }}</span>
+  </a>
+  {% endfor %}
+</nav>
+<div class="fm-foot">
+  このページはご家庭専用です。リンクをほかの方に送らないでください。
+  <form method="post" action="{% url 'family:leave' %}" class="mt-2">{% csrf_token %}<button type="submit">この端末で開くのをやめる</button></form>
+</div>
+{% endblock %}

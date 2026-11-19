@@ -36,6 +36,7 @@ urlpatterns = [
     path('yoyaku/', include('reservations.public_urls')),
     path('esignatures/', include('esignatures.urls')),
     path('line/', include('line_integration.urls')),
+    path('family/', include('family.urls')),
     path('ai/', include('ai_assist.urls')),
     # 職員アプリ（iOS・Android。michinoteapp）の API。ログインはトークン（Authorization: Bearer）
     path('api/mobile/v1/', include('mobile_api.urls')),

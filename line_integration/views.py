@@ -212,6 +212,14 @@ class LineWebhookView(View):
 
             # 連携済みなら、登録コードの照合はしない（予約管理を使う事業所では受信箱に積む）
             if Guardian.objects.filter(line_user_id=line_user_id, line_linked=True).exists():
+                # 保護者ページ（施設設定でオンのとき）：「メニュー」などの言葉にはリンクを返す。連絡帳には積まない
+                if facility is not None and facility.use_family_page:
+                    from family import services as family_services
+                    if family_services.is_menu_word(raw_text):
+                        menu = family_services.menu_reply(facility, line_user_id, base)
+                        if menu:
+                            reply(menu)
+                            return
                 # 計画書中心の画面：保護者からの LINE を連絡帳に積む
                 self._contact_note(facility, line_user_id, raw_text)
                 if reservation_enabled(facility):
@@ -256,6 +264,11 @@ class LineWebhookView(View):
                         f'{guardian.beneficiary.full_name}様の保護者として登録しました。\n'
                         'これからお子様の様子をお届けします。'
                     )
+                    if facility.use_family_page:
+                        from family import services as family_services
+                        menu = family_services.menu_reply(facility, line_user_id, base)
+                        if menu:
+                            reply_text += '\n\n' + menu
                 elif reservation_enabled(facility):
                     # 予約管理を使う事業所では、登録コード以外の文は
                     # （顧客台帳にいて設定が許すときは）その場で反映し、そうでなければ受信箱へ積む。

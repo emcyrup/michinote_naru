@@ -1,0 +1,11 @@
+{% extends 'family/base.html' %}
+{% block title %}{{ item.label }} — {{ facility.name }}{% endblock %}
+{% block content %}
+<div class="fm-card text-center">
+  <div class="fm-icon mx-auto">{% if item.icon %}<i class="bi {{ item.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ item.text }}</span>{% endif %}</div>
+  <div class="fw-bold mt-2" style="white-space:pre-line;">{{ item.label }}</div>
+  <div class="mt-2">この画面は準備中です。</div>
+  <div class="small text-muted mt-1">できしだい、ここから使えるようになります。</div>
+  <a href="{% url 'family:home' %}" class="btn btn-outline-secondary mt-3"><i class="bi bi-chevron-left"></i> もどる</a>
+</div>
+{% endblock %}

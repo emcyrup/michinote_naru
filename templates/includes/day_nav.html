@@ -1,0 +1,15 @@
+{# 日ごとの一覧の ←→（schedules.daylist.day_nav の値を渡す）。date のほかに引き継ぐものは day_nav_query に #}
+<div class="daynav" role="group" aria-label="日付の切り替え">
+  <a href="?date={{ prev_day|date:'Y-m-d' }}{{ day_nav_query|default:'' }}" class="daynav-btn" aria-label="前の日"><i class="bi bi-chevron-left"></i></a>
+  <div class="daynav-day">
+    <div class="daynav-date">{{ day|date:'n月j日' }}（{{ weekday }}）{% if is_today %}<span class="daynav-today">きょう</span>{% endif %}</div>
+    {% if holiday %}<div class="daynav-sub">{{ holiday }}</div>{% endif %}
+    {% if day_nav_note %}<div class="daynav-sub">{{ day_nav_note }}</div>{% endif %}
+  </div>
+  <a href="?date={{ next_day|date:'Y-m-d' }}{{ day_nav_query|default:'' }}" class="daynav-btn" aria-label="次の日"><i class="bi bi-chevron-right"></i></a>
+</div>
+<div class="daynav-tools">
+  {% if not is_today %}<a href="?date={{ today|date:'Y-m-d' }}{{ day_nav_query|default:'' }}" class="btn btn-sm btn-outline-secondary">きょうへ</a>{% endif %}
+  <input type="date" class="form-control form-control-sm" style="width:auto;" value="{{ day|date:'Y-m-d' }}" aria-label="日付を選ぶ"
+         onchange="if(this.value){location.href='?date='+this.value+'{{ day_nav_query|default:''|escapejs }}';}">
+</div>

@@ -1390,3 +1390,27 @@ class PaperScanDeleteView(LoginRequiredMixin, View):
         scan.delete()
         messages.success(request, '取り込んだ写真を削除しました。')
         return redirect('records:paper_list')
+
+
+# =============================================
+# 日誌：日ごとの一覧（2026-11 事業所「成」の要望）
+# その日に来る予定の子だけを並べ、←→ で前の日・次の日へ。欠席の子は下にグレーで出す
+# =============================================
+class DayListView(LoginRequiredMixin, View):
+    def get(self, request):
+        from schedules.daylist import day_nav, day_visits, parse_day
+        facility = request.user.facility
+        day = parse_day(request.GET.get('date'))
+        coming, absent = day_visits(facility, day)
+        records = {r.beneficiary_id: r for r in DailyRecord.objects.filter(facility=facility, date=day)}
+        rows = [{'beneficiary': v.beneficiary, 'visit': v, 'record': records.get(v.beneficiary_id)} for v in coming]
+        absent_rows = [{'beneficiary': v.beneficiary, 'visit': v, 'record': records.get(v.beneficiary_id)} for v in absent]
+        listed = {v.beneficiary_id for v in coming} | {v.beneficiary_id for v in absent}
+        # 予定に無いが、その日の日誌がある子（予定を入れ忘れた日でも書いたものが見える）
+        extra_rows = [{'beneficiary': r.beneficiary, 'visit': None, 'record': r}
+                      for b_id, r in records.items() if b_id not in listed]
+        done = sum(1 for r in rows if r['record'] and r['record'].status == DailyRecord.STATUS_CONFIRMED)
+        return render(request, 'records/day_list.html', {
+            **day_nav(day), 'rows': rows, 'absent_rows': absent_rows, 'extra_rows': extra_rows,
+            'done': done, 'total': len(rows), 'day_nav_note': f'日誌 {done} / {len(rows)} 人 確定',
+        })

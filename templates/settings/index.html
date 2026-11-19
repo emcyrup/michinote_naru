@@ -421,6 +421,14 @@
             <label class="form-check-label" for="use_reports">帳票出力（利用者ごとのサービス提供実績記録票・療育記録一覧、出欠・利用実績一覧、業務日誌、名簿、個別支援計画一覧を PDF・CSV で）</label>
           </div>
           {% endif %}
+          <div class="form-check mb-1">
+            <input type="checkbox" class="form-check-input" name="home_icons" id="home_icons" {% if facility.home_icons %}checked{% endif %} {% if not is_admin %}disabled{% endif %}>
+            <label class="form-check-label" for="home_icons">ホームをアイコンの並びにする（連絡帳・日誌・保護者からの連絡・実績記録票・予定・お知らせ・個別支援計画。これまでのホームは「期限・お知らせ」から開けます）</label>
+          </div>
+          <div class="form-check mb-1">
+            <input type="checkbox" class="form-check-input" name="use_family_page" id="use_family_page" {% if facility.use_family_page %}checked{% endif %} {% if not is_admin %}disabled{% endif %}>
+            <label class="form-check-label" for="use_family_page">保護者ページ（公式 LINE につないだ保護者が、LINE から開く画面。LINE で「メニュー」と送るとリンクが届きます。LINE連携が要ります）</label>
+          </div>
           <div class="form-text">使わない機能はメニューやボタンから消えます。記録は消えないので、あとから戻せます。</div>
           {% if trial_ai.limit and not is_developer %}
           <div class="alert alert-info small py-1 px-2 mt-2 mb-0">「お試し」の機能の AI は <b>{{ trial_ai.limit }} 回</b>まで使えます（使った回数 {{ trial_ai.used }}・あと {{ trial_ai.remaining }} 回）。</div>
