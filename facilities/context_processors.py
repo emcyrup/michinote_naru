@@ -63,6 +63,7 @@ def branding(request):
                      'ryoiku': facility.is_ryoiku, 'reservation_fixed': _reservation_fixed(facility)},
         'trial_ai': _trial_ai(facility),
         'planbook_unread': _planbook_unread(facility) if facility.is_planbook else 0,
+        'family_unconfirmed': _family_unconfirmed(facility),
         'pending_staff_count': _pending_staff(user, facility),
         'speech_server': speech.enabled(),
         'speech_diarization': speech.diarization(),
@@ -93,3 +94,14 @@ def _pending_staff(user, facility):
         return 0
     from accounts.models import StaffAccount
     return StaffAccount.objects.filter(facility=facility, signup_pending=True).count()
+
+
+def _family_unconfirmed(facility):
+    """保護者からの連絡のうち、まだ職員が確認していない件数（保護者ページを使う事業所だけ数える）"""
+    if not (facility.use_family_page and facility.use_line):
+        return 0
+    try:
+        from family.services import unconfirmed_count
+        return unconfirmed_count(facility)
+    except Exception:  # noqa: BLE001  メニューの数字のために画面を止めない
+        return 0

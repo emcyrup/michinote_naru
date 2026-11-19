@@ -537,7 +537,7 @@ class EditingView(LoginRequiredMixin, View):
 STAFF_HOME_ICONS = [
     {'key': 'renraku', 'label': '連絡帳', 'icon': 'bi-journal-text', 'url': None},
     {'key': 'nisshi', 'label': '日誌', 'icon': 'bi-pencil-square', 'url': 'records:day'},
-    {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': None},
+    {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': 'family:staff_inbox', 'needs': 'family_page'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'reports:index'},
     {'key': 'yotei', 'label': '予定', 'icon': 'bi-calendar3', 'url': 'schedules:calendar'},
     {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': None},
@@ -558,10 +558,19 @@ class HomeIconsView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from django.urls import reverse
         ctx = super().get_context_data(**kwargs)
+        facility = self.request.user.facility
         icons = []
         for it in STAFF_HOME_ICONS:
-            url = reverse(it['url']) if it['url'] else reverse('facilities:soon', args=[it['key']])
-            icons.append({**it, 'href': url, 'soon': it['url'] is None})
+            # 保護者ページを使わない事業所では、保護者からの連絡の画面は開けない（準備中の案内へ）
+            ready = bool(it['url']) and (it.get('needs') != 'family_page' or (facility.use_family_page and facility.use_line))
+            url = reverse(it['url']) if ready else reverse('facilities:soon', args=[it['key']])
+            icons.append({**it, 'href': url, 'soon': not ready, 'badge': 0})
+        if facility.use_family_page:
+            from family.services import unconfirmed_count
+            n = unconfirmed_count(facility)
+            for it in icons:
+                if it['key'] == 'from_family':
+                    it['badge'] = n
         ctx['icons'] = icons
         return ctx
 

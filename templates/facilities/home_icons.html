@@ -7,6 +7,7 @@
   {% for it in icons %}
   <a href="{{ it.href }}">
     {% if it.soon %}<span class="ih-soon">準備中</span>{% endif %}
+    {% if it.badge %}<span class="ih-badge" aria-label="未確認 {{ it.badge }} 件">{{ it.badge }}</span>{% endif %}
     <span class="ih-icon"><i class="bi {{ it.icon }}" aria-hidden="true"></i></span>
     <span class="ih-label">{{ it.label }}</span>
   </a>
