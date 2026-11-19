@@ -1,0 +1,100 @@
+# =============================================
+# nginx の脆弱性の確認（手動実行だけ・読み取りだけ。サーバーの設定は変えない）
+#   2026-11-18 公表の nginx の脆弱性（CVE-2026-123007・CVE-2026-123633 ほか。HTTP/2 が有効だと、ログインなしで攻撃されうる）に
+#   プロバイダ管理のサーバー（本番＝ゆあーず・オウル・コト・yui／開発＝検証・デモ）が当てはまるかを確かめる。
+#   1) 外から：各サイトが HTTP/2 で応答するか（HTTP/2 を止めていれば 1.1 になる）
+#   2) サーバーの中から（sudo なし）：nginx の版・パッケージの版・更新の候補・設定の中の http2 の数・自動更新の有無
+#   nginx はプロバイダ管理（sudo なし）なので、直すのはプロバイダ。ここは「当てはまるか」と「直ったか」を見るだけ。
+#   版の情報がログに出るので、読み終えたら run のログを消す（公開リポジトリ）。
+# =============================================
+name: Nginx check
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "どのサーバーを見るか（prod＝ゆあーず・オウル・コト・yui／dev＝検証・デモ）"
+        type: choice
+        required: true
+        default: prod
+        options: [prod, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      TARGET: ${{ inputs.target }}
+    steps:
+      - name: Outside (HTTP/2 で応答するか)
+        run: |
+          if [ "$TARGET" = "prod" ]; then
+            hosts="michinote.yours.ai-labo.cloud michinote.owl.ai-labo.cloud kaigonote.koto.ai-labo.cloud michinote.yui.ai-labo.cloud"
+          else
+            hosts="st-michinotedemo.ai-labo.cloud st-kaigonote.kyotaku.ai-labo.cloud st-kaigonote.midorikai.ai-labo.cloud st-kaigonote.demo.ai-labo.cloud st-michinote.sample.ai-labo.cloud st-michinote.silky.ai-labo.cloud"
+          fi
+          for h in $hosts; do
+            out=$(curl -s -o /dev/null -D "$RUNNER_TEMP/h.txt" --http2 --max-time 20 -w '%{http_version} %{http_code}' "https://$h/healthz/" || true)
+            server=$(grep -i '^server:' "$RUNNER_TEMP/h.txt" | tr -d '\r' | cut -d' ' -f2- || true)
+            h3=$(grep -ci '^alt-svc:.*h3' "$RUNNER_TEMP/h.txt" || true)
+            echo "$h | HTTP ${out% *} | 応答 ${out#* } | Server: ${server:-（なし）} | HTTP/3 の案内: $h3"
+          done
+
+      - name: Set up SSH
+        env:
+          KEY: ${{ inputs.target == 'prod' && secrets.YOURS_DEPLOY_SSH_KEY || secrets.DEV_DEPLOY_SSH_KEY }}
+          HOST: ${{ inputs.target == 'prod' && secrets.YOURS_DEPLOY_HOST || secrets.DEV_DEPLOY_HOST }}
+          PORT: ${{ inputs.target == 'prod' && (secrets.YOURS_DEPLOY_SSH_PORT || '22') || (secrets.DEV_DEPLOY_SSH_PORT || '22') }}
+        run: |
+          [ -n "$KEY" ] && [ -n "$HOST" ] || { echo "SSH の Secrets が未登録です"; exit 1; }
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Inside (nginx の版・設定。読み取りだけ)
+        env:
+          HOST: ${{ inputs.target == 'prod' && secrets.YOURS_DEPLOY_HOST || secrets.DEV_DEPLOY_HOST }}
+          USER: ${{ inputs.target == 'prod' && secrets.YOURS_DEPLOY_USER || secrets.DEV_DEPLOY_USER }}
+          PORT: ${{ inputs.target == 'prod' && (secrets.YOURS_DEPLOY_SSH_PORT || '22') || (secrets.DEV_DEPLOY_SSH_PORT || '22') }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$PORT" "$USER@$HOST" bash -s <<'REMOTE'
+          set -u
+          echo "os: $(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-不明}") / kernel $(uname -r)"
+          NG=$(command -v nginx 2>/dev/null || ls /usr/sbin/nginx /usr/local/nginx/sbin/nginx /usr/local/sbin/nginx 2>/dev/null | head -n 1)
+          if [ -z "$NG" ]; then echo "nginx: 実行ファイルが見つかりません（別のサーバーで HTTPS を終端しているか、Docker の中）"; fi
+          if [ -n "$NG" ]; then
+            echo "nginx: $("$NG" -v 2>&1) （$NG・更新日 $(stat -c %y "$NG" 2>/dev/null | cut -d. -f1)）"
+            echo "組み込み: $("$NG" -V 2>&1 | tr ' ' '\n' | grep -E 'http_v2|http_v3|with-mail|with-stream($|=)' | tr '\n' ' ')"
+          fi
+          echo "--- パッケージ"
+          dpkg-query -W -f='${Package} ${Version} ${Status}\n' 'nginx*' 'libnginx*' 2>/dev/null | grep "install ok installed" | sed 's/ install ok installed//' || true
+          rpm -q nginx 2>/dev/null || true
+          apt-cache policy nginx nginx-core nginx-common 2>/dev/null | grep -E '^[a-z]|Installed|Candidate|インストール|候補' || true
+          echo "--- 動いている nginx"
+          mp=$(pgrep -o -x nginx 2>/dev/null || true)
+          if [ -n "$mp" ]; then echo "master pid $mp 起動 $(ps -o lstart= -p "$mp" | xargs) / worker $(pgrep -x nginx | wc -l) 本 / 実行ユーザー $(ps -o user= -C nginx | sort -u | tr '\n' ' ')"; else echo "nginx のプロセスが見えません"; fi
+          echo "--- 設定（/etc/nginx。読めるファイルの数だけ出す。中身は出さない）"
+          if [ -r /etc/nginx/nginx.conf ]; then
+            c() { grep -rhsE "$1" /etc/nginx 2>/dev/null | grep -vE '^\s*#' | wc -l; }
+            echo "listen … http2 の行: $(c '^\s*listen\b.*\bhttp2\b')"
+            echo "http2 on の行: $(c '^\s*http2\s+on')"
+            echo "http2 off の行: $(c '^\s*http2\s+off')"
+            echo "listen 443 の行: $(c '^\s*listen\b.*443')"
+            echo "quic／http3 の行: $(c '^\s*(listen\b.*\bquic\b|http3\s+on)')"
+            echo "resolver の行: $(c '^\s*resolver\s')"
+            echo "mail { の行: $(c '^\s*mail\s*\{')"
+            echo "server_tokens off の行: $(c '^\s*server_tokens\s+off')"
+            echo "読めない設定ファイル: $(find /etc/nginx -type f ! -readable 2>/dev/null | wc -l)"
+          else
+            echo "/etc/nginx/nginx.conf を読めません（権限なし、または別の場所）"
+          fi
+          echo "--- 自動更新"
+          echo "unattended-upgrades: $(systemctl is-enabled unattended-upgrades 2>/dev/null || echo 不明) / $(systemctl is-active unattended-upgrades 2>/dev/null || echo 不明)"
+          cat /etc/apt/apt.conf.d/20auto-upgrades 2>/dev/null | tr '\n' ' ' || true; echo
+          echo "nginx の更新の記録（dpkg.log の最後の 3 行）:"
+          (zcat -f /var/log/dpkg.log* 2>/dev/null | grep -E " (upgrade|install) nginx" | sort | tail -n 3) || echo "  （読めません）"
+          echo "最後の apt update: $(stat -c %y /var/lib/apt/periodic/update-success-stamp 2>/dev/null | cut -d. -f1 || echo 不明)"
+          REMOTE
