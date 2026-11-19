@@ -29,6 +29,9 @@ class ScheduledVisit(models.Model):
     has_pickup  = models.BooleanField(default=False, verbose_name='送迎あり（迎え）')
     has_dropoff = models.BooleanField(default=False, verbose_name='送迎あり（送り）')
     notes       = models.TextField(blank=True, verbose_name='備考')
+    # 実績の時間（2026-11 実績記録票。来た時刻・帰った時刻。日誌の入室・退室時間と同じ事実）
+    actual_start = models.TimeField(null=True, blank=True, verbose_name='実績 開始')
+    actual_end   = models.TimeField(null=True, blank=True, verbose_name='実績 終了')
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
 

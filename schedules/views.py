@@ -278,3 +278,115 @@ class BulkCreateView(ScheduleEnabledMixin, View):
             messages.info(request, f'{year}年{month}月の予定はすでに全て作成済みです。')
 
         return redirect('schedules:calendar_month', year=year, month=month)
+
+
+# =============================================
+# 実績記録票（2026-11 事業所「成」の要望。アイコンのホームを使う事業所だけ）
+# =============================================
+class JissekiMixin(LoginRequiredMixin):
+    """アイコンのホームを使う事業所だけが開ける"""
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            facility = getattr(request.user, 'facility', None)
+            if facility is None or not facility.home_icons:
+                from django.http import Http404
+                raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+
+class JissekiDayView(JissekiMixin, View):
+    """実績記録票（日ごと）：その日に来る子と、入れた時間。チェックした子にまとめて時間を入れる"""
+
+    def get(self, request):
+        from . import jisseki
+        from .daylist import day_nav, parse_day
+        facility = request.user.facility
+        day = parse_day(request.GET.get('date'))
+        rows, absent_rows = jisseki.day_rows(facility, day)
+        done = sum(1 for r in rows if r['done'])
+        warn = sum(1 for r in rows if r['warn'])
+        return render(request, 'schedules/jisseki_day.html', {
+            **day_nav(day), 'rows': rows, 'absent_rows': absent_rows, 'warn_count': warn,
+            'day_nav_note': f'時間の入力 {done} / {len(rows)} 人',
+        })
+
+    def post(self, request):
+        from django.urls import reverse
+        from . import jisseki
+        from .daylist import parse_day
+        facility = request.user.facility
+        day = parse_day(request.POST.get('date'))
+        back = reverse('schedules:jisseki') + f'?date={day.isoformat()}'
+        ids = [int(x) for x in request.POST.getlist('visit') if x.isdigit()]
+        visits = list(ScheduledVisit.objects.filter(facility=facility, date=day, pk__in=ids)
+                      .exclude(status=ScheduledVisit.STATUS_ABSENT))
+        if not visits:
+            messages.error(request, '時間を入れる子に、チェックを付けてください。')
+            return redirect(back)
+        if request.POST.get('action') == 'clear':
+            n = jisseki.set_times(facility, visits, None, None)
+            messages.success(request, f'{n} 人の時間を消しました。')
+            return redirect(back)
+        raw_s, raw_e = request.POST.get('start', ''), request.POST.get('end', '')
+        start, end = jisseki.parse_hm(raw_s), jisseki.parse_hm(raw_e)
+        problem = jisseki.check_times(start, end, raw_s, raw_e)
+        if not problem and not start:
+            problem = '始まりの時間を入れてください。'
+        if problem:
+            messages.error(request, problem)
+            return redirect(back)
+        n = jisseki.set_times(facility, visits, start, end)
+        label = f'{start:%H:%M}〜{end:%H:%M}' if end else f'{start:%H:%M}〜'
+        messages.success(request, f'{n} 人に {label} を入れました。')
+        return redirect(back)
+
+
+class JissekiMonthView(JissekiMixin, View):
+    """実績記録票（子ども 1 人の 1 か月ぶん）：来所予定のある日と時間。ここでも直せる"""
+
+    def setup_objects(self, request, beneficiary_pk, year, month):
+        from .daylist import parse_day
+        self.facility = request.user.facility
+        self.child = get_object_or_404(Beneficiary, pk=beneficiary_pk, facility=self.facility)
+        today = date.today()
+        self.year, self.month = year or today.year, month or today.month
+        month_or_404(self.year, self.month)
+        raw_back = request.POST.get('back') or request.GET.get('back')
+        self.back = parse_day(raw_back).isoformat() if raw_back else ''
+
+    def get(self, request, beneficiary_pk, year=None, month=None):
+        from . import jisseki
+        self.setup_objects(request, beneficiary_pk, year, month)
+        sheet = jisseki.month_sheet(self.facility, self.child, self.year, self.month)
+        return render(request, 'schedules/jisseki_month.html', {
+            'child': self.child, 'year': self.year, 'month': self.month, 'back': self.back, **sheet,
+        })
+
+    def post(self, request, beneficiary_pk, year=None, month=None):
+        from . import jisseki
+        self.setup_objects(request, beneficiary_pk, year, month)
+        sheet = jisseki.month_sheet(self.facility, self.child, self.year, self.month)
+        changed, problems = 0, []
+        for r in sheet['rows']:
+            v = r['visit']
+            if r['absent'] or f's_{v.pk}' not in request.POST:
+                continue
+            raw_s, raw_e = request.POST.get(f's_{v.pk}', ''), request.POST.get(f'e_{v.pk}', '')
+            start, end = jisseki.parse_hm(raw_s), jisseki.parse_hm(raw_e)
+            if (start, end) == (r['start'], r['end']):
+                continue
+            problem = jisseki.check_times(start, end, raw_s, raw_e)
+            if problem:
+                problems.append(f'{v.date.month}月{v.date.day}日：{problem}')
+                continue
+            changed += jisseki.set_times(self.facility, [v], start, end)
+        for p in problems:
+            messages.error(request, p)
+        if changed:
+            messages.success(request, f'{changed} 日ぶんを保存しました。')
+        elif not problems:
+            messages.info(request, '変わったところはありません。')
+        from django.urls import reverse
+        url = reverse('schedules:jisseki_month', args=[self.child.pk, self.year, self.month])
+        return redirect(url + (f'?back={self.back}' if self.back else ''))

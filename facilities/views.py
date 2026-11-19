@@ -538,7 +538,7 @@ STAFF_HOME_ICONS = [
     {'key': 'renraku', 'label': '連絡帳', 'icon': 'bi-journal-text', 'url': 'family:staff_book', 'needs': 'family_page'},
     {'key': 'nisshi', 'label': '日誌', 'icon': 'bi-pencil-square', 'url': 'records:day'},
     {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': 'family:staff_inbox', 'needs': 'family_page'},
-    {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'reports:index'},
+    {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'schedules:jisseki'},
     {'key': 'yotei', 'label': '予定', 'icon': 'bi-calendar3', 'url': 'schedules:calendar'},
     {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': None},
     {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'support_plans:list'},
