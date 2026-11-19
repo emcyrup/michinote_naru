@@ -1,0 +1,6 @@
+{# 月の ←→（family.yotei.month_view の値を渡す）。ym のほかに引き継ぐものは cal_query に #}
+<div class="cal-nav" role="group" aria-label="月の切り替え">
+  <a class="cal-nav-btn" href="?ym={{ prev_ym }}{{ cal_query|default:'' }}" aria-label="前の月"><i class="bi bi-chevron-left"></i></a>
+  <div class="cal-nav-ym">{{ year }}年{{ month }}月{% if not is_this_month %}<a class="cal-nav-this" href="?ym={{ this_ym }}{{ cal_query|default:'' }}">今月へ</a>{% endif %}</div>
+  <a class="cal-nav-btn" href="?ym={{ next_ym }}{{ cal_query|default:'' }}" aria-label="次の月"><i class="bi bi-chevron-right"></i></a>
+</div>

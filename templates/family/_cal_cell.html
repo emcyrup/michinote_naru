@@ -1,0 +1,5 @@
+<span class="cal-num"><span>{{ c.date.day }}</span></span>
+{% if c.label %}<span class="cal-ev{% if c.is_closed %} is-closed{% endif %}">{{ c.label }}</span>{% elif c.holiday %}<span class="cal-hol">{{ c.holiday }}</span>{% endif %}
+{% if c.use %}<span class="cal-mark is-use">利用</span>{% elif c.absent %}<span class="cal-mark is-absent">欠席</span>{% endif %}
+{% if c.count %}<span class="cal-count">{{ c.count }}人</span>{% endif %}
+{% if c.has_detail and not cal_apply %}<i class="bi bi-info-circle-fill cal-info" aria-hidden="true"></i>{% endif %}

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ day|date:'n月j日' }}の予定 — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}予定{% endblock %}
+{% block nav_family_calendar %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .cd-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; }
+  .cd-date { font-size: 1.3rem; font-weight: 700; }
+  .cd-closed { display: flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; }
+  .cd-closed input { width: 24px; height: 24px; }
+  .cd-kids { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cd-kids span { background: #f3f0ea; border-radius: 999px; padding: 3px 10px; font-size: .9rem; }
+  .cd-kids span.is-req { background: #e8f0fb; color: #23508f; }
+  .cd-kids span.is-absent { background: #ececec; color: #888; text-decoration: line-through; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_calendar' %}?ym={{ ym }}" class="small"><i class="bi bi-chevron-left"></i> カレンダーへ</a></div>
+  <form method="post" class="cd-card">
+    {% csrf_token %}
+    <div class="cd-date mb-3">{{ day|date:'n月j日' }}（{{ weekday }}）{% if is_today %}<span class="daynav-today">きょう</span>{% endif %}{% if holiday %} <small class="text-muted fw-normal" style="font-size:.85rem;">{{ holiday }}</small>{% endif %}</div>
+    <label class="cd-closed mb-3"><input type="checkbox" name="is_closed"{% if event.is_closed %} checked{% endif %}> 休業日にする</label>
+    <label for="cd-title" class="form-label fw-bold">予定・お出かけ先（カレンダーの日付の下に出ます）</label>
+    <input type="text" name="title" id="cd-title" class="form-control mb-3" value="{{ event.title|default:'' }}" maxlength="{{ title_max }}" placeholder="例：クッキング／○○公園へおでかけ">
+    <label for="cd-detail" class="form-label fw-bold">詳しい内容（持ち物・参加費など）</label>
+    <textarea name="detail" id="cd-detail" class="form-control mb-3" rows="6" maxlength="{{ detail_max }}" placeholder="例：持ち物…水筒・帽子・タオル&#10;参加費…300 円（当日あつめます）">{{ event.detail|default:'' }}</textarea>
+    <button type="submit" class="btn btn-primary w-100 fw-bold py-2" id="cd-save">保存する</button>
+    <div class="small text-muted mt-2">保護者ページのカレンダーにも、同じ内容が出ます（保護者は見るだけ）。</div>
+  </form>
+
+  <div class="cd-card mt-3">
+    <div class="fw-bold mb-2">この日に来る予定の子（{{ coming|length }} 人）</div>
+    {% if coming or absent %}
+    <div class="cd-kids">
+      {% for v in coming %}<span class="{% if v.requested %}is-req{% endif %}">{{ v.beneficiary.full_name }}{% if v.requested %} <small>申請</small>{% endif %}</span>{% endfor %}
+      {% for v in absent %}<span class="is-absent">{{ v.beneficiary.full_name }}</span>{% endfor %}
+    </div>
+    {% else %}<div class="text-muted small">まだ、来所予定はありません。</div>{% endif %}
+    {% if features.schedule %}<div class="mt-2 small"><a href="{% url 'schedules:daily' day.year day.month day.day %}">この日の出欠・来所予定を直す</a></div>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -189,3 +189,68 @@ class ParentNote(models.Model):
 
     def __str__(self):
         return f'{self.date} {self.beneficiary}（保護者より）'
+
+
+class DayEvent(models.Model):
+    """
+    予定のカレンダーの 1 日ぶん（休業日・活動の予定・お出かけ先）。職員が入れ、保護者ページにも同じものが出る。
+    title は日付の下に出す短い文。detail は日付を押したときに出す詳しい内容（持ち物・参加費など）。
+    """
+    TITLE_MAX = 40
+    DETAIL_MAX = 1000
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='day_events')
+    date = models.DateField(verbose_name='日付')
+    title = models.CharField(max_length=TITLE_MAX, blank=True, verbose_name='予定（日付の下に出す）')
+    is_closed = models.BooleanField(default=False, verbose_name='休業日')
+    detail = models.TextField(blank=True, verbose_name='詳しい内容（持ち物・参加費など）')
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+', verbose_name='最後に書いた職員')
+
+    class Meta:
+        verbose_name = '予定（カレンダー）'
+        verbose_name_plural = '予定（カレンダー）'
+        ordering = ['date']
+        constraints = [models.UniqueConstraint(fields=['facility', 'date'], name='day_event_one_per_day')]
+
+    def __str__(self):
+        return f'{self.date} {"休業日 " if self.is_closed else ""}{self.title}'
+
+    @property
+    def label(self):
+        """日付の下に出す文（休業日で予定の文が無ければ「休業日」）"""
+        return self.title or ('休業日' if self.is_closed else '')
+
+
+class UseRequest(models.Model):
+    """
+    利用日申請。保護者が保護者ページのカレンダーから送る。職員が代わりに入れることもある（口頭・紙で受けたとき）。
+    申請した日は、そのまま来所予定（schedules.ScheduledVisit）になり、実績記録票にも出る。これはその控え（だれが・いつ）。
+    """
+    VIA_PARENT = 'parent'
+    VIA_STAFF = 'staff'
+    VIA_CHOICES = [(VIA_PARENT, '保護者ページ'), (VIA_STAFF, '職員が代わりに')]
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='use_requests')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='use_requests', verbose_name='利用者')
+    date = models.DateField(verbose_name='利用する日')
+    via = models.CharField(max_length=10, choices=VIA_CHOICES, default=VIA_PARENT, verbose_name='申請のしかた')
+    line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
+    sender_name = models.CharField(max_length=120, blank=True, verbose_name='申請した保護者')
+    staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='+', verbose_name='代わりに入れた職員')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='申請した日時')
+    seen_at = models.DateTimeField(null=True, blank=True, verbose_name='職員が確認した日時')
+    seen_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='確認した職員')
+
+    class Meta:
+        verbose_name = '利用日申請'
+        verbose_name_plural = '利用日申請'
+        ordering = ['date', 'pk']
+        indexes = [models.Index(fields=['facility', 'seen_at'], name='use_request_unseen'),
+                   models.Index(fields=['beneficiary', 'date'], name='use_request_child_day')]
+
+    def __str__(self):
+        return f'{self.date} {self.beneficiary}（{self.get_via_display()}）'

@@ -1,0 +1,18 @@
+<script>
+// 申請の画面：押した日の色を変え、選んだ日数を出す
+(function () {
+  var form = document.getElementById('cal-form');
+  if (!form) return;
+  var boxes = [].slice.call(form.querySelectorAll('input[name=dates]'));
+  var n = document.getElementById('cal-n'), send = document.getElementById('cal-send-btn');
+  function refresh() {
+    var k = 0;
+    boxes.forEach(function (b) { b.closest('.cal-cell').classList.toggle('is-on', b.checked); if (b.checked) k++; });
+    if (n) n.textContent = k ? '選んだ日：' + k + ' 日' : '日にちを押して選んでください';
+    if (send) send.disabled = k === 0;
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+  form.addEventListener('submit', function () { if (send) send.disabled = true; });
+  refresh();
+})();
+</script>

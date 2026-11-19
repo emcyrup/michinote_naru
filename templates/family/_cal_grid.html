@@ -1,0 +1,15 @@
+{# カレンダーの本体。cal_apply のときは、選べる日がチェックの付く枠になる（name="dates"）。そうでなければ日付を押すと cal_day_base + 日付 へ #}
+<div class="cal{% if cal_apply %} is-apply{% endif %}">
+  <div class="cal-head">{% for w in week_head %}<div class="cal-w{% if forloop.first %} is-sun{% elif forloop.last %} is-sat{% endif %}">{{ w }}</div>{% endfor %}</div>
+  {% for week in weeks %}
+  <div class="cal-row">
+    {% for c in week %}
+      {% if not c.in_month %}<div class="cal-cell is-out"></div>
+      {% elif cal_apply and c.can_pick %}<label class="cal-cell is-pick{% if c.is_sun %} is-sun{% elif c.is_sat %} is-sat{% endif %}{% if c.is_today %} is-today{% endif %}"><input type="checkbox" name="dates" value="{{ c.iso }}" aria-label="{{ c.date|date:'n月j日' }}">{% include 'family/_cal_cell.html' %}</label>
+      {% elif cal_apply %}<div class="cal-cell is-off{% if c.is_closed %} is-closed{% endif %}{% if c.use %} is-use{% endif %}{% if c.is_today %} is-today{% endif %}">{% include 'family/_cal_cell.html' %}</div>
+      {% else %}<a class="cal-cell{% if c.is_sun %} is-sun{% elif c.is_sat %} is-sat{% endif %}{% if c.is_closed %} is-closed{% endif %}{% if c.is_today %} is-today{% endif %}" href="{{ cal_day_base }}{{ c.iso }}/" aria-label="{{ c.date|date:'n月j日' }}{% if c.label %} {{ c.label }}{% endif %}">{% include 'family/_cal_cell.html' %}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
