@@ -343,6 +343,15 @@
           <span>支援計画</span>
         </a>
       </li>
+      {% if features.family_page %}
+      <li>
+        <a class="sidebar-nav-item {% block nav_family_inbox %}{% endblock %}" href="{% url 'family:staff_inbox' %}">
+          <i class="bi bi-telephone"></i>
+          <span>保護者からの連絡</span>
+          {% if family_unconfirmed %}<span class="badge rounded-pill ms-auto" style="background:#d63a2f;">{{ family_unconfirmed }}</span>{% endif %}
+        </a>
+      </li>
+      {% endif %}
       <li class="nav-secondary">
         {% if features.line %}
         <a class="sidebar-nav-item {% block nav_line %}{% endblock %}"

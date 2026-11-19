@@ -7,9 +7,11 @@
 """
 import secrets
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from beneficiaries.models import Beneficiary
 from facilities.models import Facility
 
 
@@ -41,3 +43,77 @@ class FamilyAccess(models.Model):
         self.rotated_at = timezone.now()
         self.save(update_fields=['token', 'rotated_at'])
         return self
+
+
+class FamilyMessage(models.Model):
+    """
+    保護者からの連絡（欠席連絡・その他の連絡）。1 件が「1 人の子の 1 日ぶん」。
+    保護者が複数の日を選んで送ったときは、日ごとに 1 件ずつ作る（職員は日ごとの画面で確認する）。
+
+    職員の画面「保護者からの連絡」での出し方：
+      - 連絡の対象日（target_date）のページに赤い字で出す
+      - 先の日付の連絡は、まず届いた日（sent_on）のページに黒い字で出し、職員が「確認」を押すと対象日のページへ移る
+      - 欠席連絡は、確認したときにその日の来所予定を「欠席」にする（日ごとの一覧で下にグレーで出る）
+    """
+    KIND_ABSENCE = 'absence'
+    KIND_OTHER = 'other'
+    KIND_CHOICES = [(KIND_ABSENCE, '欠席連絡'), (KIND_OTHER, 'その他の連絡')]
+    REASON_SICK = 'sick'
+    REASON_PERSONAL = 'personal'
+    REASON_CHOICES = [(REASON_SICK, '病欠'), (REASON_PERSONAL, '都合欠')]
+    VIA_PAGE = 'page'
+    VIA_LINE = 'line'
+    VIA_CHOICES = [(VIA_PAGE, '保護者ページ'), (VIA_LINE, 'LINE のトーク')]
+    BODY_MAX = 1000
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='family_messages')
+    # LINE のトークに直接書かれた連絡は、どの子のことか分からないので空のことがある（きょうだいがいる家庭）
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, null=True, blank=True,
+                                    related_name='family_messages', verbose_name='利用者')
+    line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
+    sender_name = models.CharField(max_length=120, blank=True, verbose_name='送った保護者')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, verbose_name='種類')
+    via = models.CharField(max_length=10, choices=VIA_CHOICES, default=VIA_PAGE, verbose_name='届き方')
+    target_date = models.DateField(verbose_name='連絡の対象日')
+    reason = models.CharField(max_length=10, choices=REASON_CHOICES, blank=True, verbose_name='欠席の理由')
+    body = models.TextField(blank=True, verbose_name='内容')
+    sent_on = models.DateField(verbose_name='届いた日')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='届いた日時')
+    confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name='職員が確認した日時')
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                     related_name='+', verbose_name='確認した職員')
+    # 欠席連絡を確認して来所予定を「欠席」に変えたとき、変える前の状態（確認を取り消すときに戻す）。変えていなければ空
+    visit_prev_status = models.CharField(max_length=20, blank=True, verbose_name='確認の前の来所予定の状態')
+
+    class Meta:
+        verbose_name = '保護者からの連絡'
+        verbose_name_plural = '保護者からの連絡'
+        ordering = ['created_at', 'pk']
+        indexes = [
+            models.Index(fields=['facility', 'target_date'], name='family_msg_target'),
+            models.Index(fields=['facility', 'sent_on'], name='family_msg_sent'),
+            models.Index(fields=['facility', 'confirmed_at'], name='family_msg_confirmed'),
+        ]
+
+    def __str__(self):
+        return f'{self.target_date} {self.get_kind_display()}（{self.beneficiary or self.sender_name}）'
+
+    @property
+    def is_confirmed(self):
+        return self.confirmed_at is not None
+
+    @property
+    def is_absence(self):
+        return self.kind == self.KIND_ABSENCE
+
+    @property
+    def is_future_when_sent(self):
+        """届いた日より先の日付の連絡か"""
+        return self.target_date > self.sent_on
+
+    @property
+    def title(self):
+        """一覧に出す短い見出し（欠席：病欠／その他の連絡）"""
+        if self.is_absence:
+            return f'欠席（{self.get_reason_display()}）' if self.reason else '欠席'
+        return 'LINE のトークから' if self.via == self.VIA_LINE else 'その他の連絡'

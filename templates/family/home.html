@@ -12,8 +12,8 @@
 {% endif %}
 <nav class="fm-icons" aria-label="メニュー">
   {% for it in icons %}
-  <a href="{% url 'family:page' it.key %}">
-    <span class="fm-soon">準備中</span>
+  <a href="{{ it.href }}">
+    {% if it.soon %}<span class="fm-soon">準備中</span>{% endif %}
     <span class="fm-icon">{% if it.icon %}<i class="bi {{ it.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ it.text }}</span>{% endif %}</span>
     <span class="fm-label">{{ it.label }}</span>
   </a>

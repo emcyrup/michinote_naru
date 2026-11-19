@@ -220,6 +220,8 @@ class LineWebhookView(View):
                         if menu:
                             reply(menu)
                             return
+                    # トークに直接書かれた文も、職員の「保護者からの連絡」に出す
+                    family_services.message_from_line(facility, line_user_id, raw_text)
                 # 計画書中心の画面：保護者からの LINE を連絡帳に積む
                 self._contact_note(facility, line_user_id, raw_text)
                 if reservation_enabled(facility):

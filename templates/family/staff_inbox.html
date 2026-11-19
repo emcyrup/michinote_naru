@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}保護者からの連絡（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}保護者からの連絡{% endblock %}
+{% block nav_family_inbox %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .fmsg { background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; padding: 12px 14px; }
+  .fmsg + .fmsg { margin-top: 8px; }
+  .fmsg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .fmsg-name { font-size: 1.05rem; font-weight: 700; }
+  .fmsg-kind { font-size: .78rem; padding: 1px 9px; border-radius: 999px; background: #f1eee8; color: #555; }
+  .fmsg-kind.is-absence { background: #fde8e6; color: #b3261e; }
+  .fmsg-body { white-space: pre-wrap; font-size: 1.02rem; margin: 6px 0; }
+  .fmsg.is-red .fmsg-body, .fmsg.is-red .fmsg-what { color: #c62828; font-weight: 700; }
+  .fmsg.is-black .fmsg-body, .fmsg.is-black .fmsg-what { color: #222; }
+  .fmsg.is-done { background: #fafaf8; }
+  .fmsg-meta { font-size: .78rem; color: #777; }
+  .fmsg-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .fmsg-ok { color: #1e6b33; font-size: .88rem; font-weight: 700; }
+  .fmsg-confirm { padding: 8px 22px; font-weight: 700; }
+  .fmsg-undo { border: 0; background: none; color: #888; font-size: .78rem; text-decoration: underline; padding: 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% include 'includes/day_nav.html' %}
+
+  {% if other_days %}
+  <div class="alert alert-warning py-2 small">
+    <i class="bi bi-exclamation-circle me-1"></i>ほかの日に、まだ確認していない連絡があります：
+    {% for o in other_days %}<a href="?date={{ o.day|date:'Y-m-d' }}" class="fw-bold">{{ o.day|date:'n月j日' }}（{{ o.n }} 件）</a>{% if not forloop.last %}・{% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="daylist-head">{{ day|date:'n月j日' }} の連絡</div>
+  {% for m in today_rows %}
+  <div class="fmsg is-red {% if m.is_confirmed %}is-done{% endif %}">
+    <div class="fmsg-head">
+      <span class="fmsg-name">{% if m.beneficiary %}{{ m.beneficiary.full_name }} さん{% else %}{{ m.children_label|default:'（お子さま不明）' }} のご家庭{% endif %}</span>
+      <span class="fmsg-kind {% if m.is_absence %}is-absence{% endif %}">{{ m.title }}</span>
+      {% if m.is_future_when_sent and not m.is_confirmed %}<span class="fmsg-kind">{{ m.sent_on|date:'n月j日' }} に届いた連絡（未確認）</span>{% endif %}
+    </div>
+    {% if m.is_absence %}<div class="fmsg-what">欠席します{% if m.reason %}（{{ m.get_reason_display }}）{% endif %}</div>{% endif %}
+    {% if m.body %}<div class="fmsg-body">{{ m.body }}</div>{% endif %}
+    <div class="fmsg-foot">
+      <span class="fmsg-meta">{{ m.sender_name }}・{{ m.created_at|date:'n/j H:i' }} 受信</span>
+      {% if m.is_confirmed %}
+      <span><span class="fmsg-ok"><i class="bi bi-check-circle-fill"></i> 確認済み</span>
+        <span class="fmsg-meta">{{ m.confirmed_at|date:'n/j H:i' }}{% if m.confirmed_by %}・{{ m.confirmed_by.get_full_name|default:m.confirmed_by.username }}{% endif %}</span>
+        <form method="post" action="{% url 'family:staff_confirm' m.pk %}" class="d-inline">{% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}"><input type="hidden" name="undo" value="1"><button class="fmsg-undo" onclick="return confirm('確認を取り消しますか？')">取り消す</button></form></span>
+      {% else %}
+      <form method="post" action="{% url 'family:staff_confirm' m.pk %}">{% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}"><button class="btn btn-primary fmsg-confirm"><i class="bi bi-check2 me-1"></i>確認</button></form>
+      {% endif %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="day-empty">この日の連絡はありません。</div>
+  {% endfor %}
+
+  {% if future_rows %}
+  <div class="daylist-head">この日に届いた、先の日付の連絡（「確認」を押すと、その日のページへ移ります）</div>
+  {% for m in future_rows %}
+  <div class="fmsg is-black">
+    <div class="fmsg-head">
+      <span class="fmsg-name">{% if m.beneficiary %}{{ m.beneficiary.full_name }} さん{% else %}{{ m.children_label|default:'（お子さま不明）' }} のご家庭{% endif %}</span>
+      <span class="fmsg-kind {% if m.is_absence %}is-absence{% endif %}">{{ m.title }}</span>
+    </div>
+    <div class="fmsg-what">{{ m.target_date|date:'n月j日（D）' }}{% if m.is_absence %}　欠席します{% if m.reason %}（{{ m.get_reason_display }}）{% endif %}{% endif %}</div>
+    {% if m.body %}<div class="fmsg-body">{{ m.body }}</div>{% endif %}
+    <div class="fmsg-foot">
+      <span class="fmsg-meta">{{ m.sender_name }}・{{ m.created_at|date:'n/j H:i' }} 受信</span>
+      <form method="post" action="{% url 'family:staff_confirm' m.pk %}">{% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}"><button class="btn btn-primary fmsg-confirm"><i class="bi bi-check2 me-1"></i>確認</button></form>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_icons' %}" class="small"><i class="bi bi-chevron-left"></i> ホームへ</a></div>{% endif %}
+</div>
+{% endblock %}
