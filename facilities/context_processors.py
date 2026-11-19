@@ -64,6 +64,7 @@ def branding(request):
         'trial_ai': _trial_ai(facility),
         'planbook_unread': _planbook_unread(facility) if facility.is_planbook else 0,
         'family_unconfirmed': _family_unconfirmed(facility),
+        'family_requests_unseen': _family_requests_unseen(facility),
         'pending_staff_count': _pending_staff(user, facility),
         'speech_server': speech.enabled(),
         'speech_diarization': speech.diarization(),
@@ -94,6 +95,17 @@ def _pending_staff(user, facility):
         return 0
     from accounts.models import StaffAccount
     return StaffAccount.objects.filter(facility=facility, signup_pending=True).count()
+
+
+def _family_requests_unseen(facility):
+    """保護者から届いた利用日申請のうち、まだ職員が確認していない子どもの人数"""
+    if not (facility.use_family_page and facility.use_line):
+        return 0
+    try:
+        from family.yotei import unseen_count
+        return unseen_count(facility)
+    except Exception:  # noqa: BLE001  メニューの数字のために画面を止めない
+        return 0
 
 
 def _family_unconfirmed(facility):

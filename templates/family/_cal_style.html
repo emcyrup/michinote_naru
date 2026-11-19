@@ -1,0 +1,49 @@
+{# 予定のカレンダー（日曜始まり）。職員の画面と保護者ページで同じ見た目にする #}
+<style>
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 8px; margin-bottom: 10px; }
+  .cal-nav a.cal-nav-btn { display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 12px; background: #f3f0ea; color: #333; font-size: 1.5rem; text-decoration: none; flex: 0 0 auto; }
+  .cal-nav .cal-nav-ym { font-size: 1.25rem; font-weight: 700; text-align: center; }
+  .cal-nav .cal-nav-this { display: block; font-size: .78rem; font-weight: 400; }
+  .cal { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
+  .cal-head, .cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .cal-w { text-align: center; font-size: .78rem; font-weight: 700; padding: 6px 0; background: #f3f0ea; color: #555; }
+  .cal-w.is-sun { color: #c0392b; } .cal-w.is-sat { color: #2c63b0; }
+  .cal-cell { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-height: 76px; padding: 4px 3px; border-top: 1px solid #eee9e0; border-left: 1px solid #eee9e0; color: #2f2a24; text-decoration: none; position: relative; overflow: hidden; margin: 0; }
+  .cal-row > .cal-cell:first-child { border-left: 0; }
+  a.cal-cell:hover, a.cal-cell:focus-visible { background: #f6f9fc; color: #2f2a24; }
+  .cal-cell.is-out { background: #faf8f4; }
+  .cal-num { font-size: .95rem; font-weight: 700; line-height: 1.3; text-align: center; }
+  .cal-cell.is-sun .cal-num { color: #c0392b; } .cal-cell.is-sat .cal-num { color: #2c63b0; }
+  .cal-cell.is-today .cal-num span { display: inline-block; min-width: 1.7em; border-radius: 999px; background: var(--brand, var(--color-primary, #4e7ea8)); color: #fff; }
+  .cal-cell.is-closed { background: #f4eeee; }
+  .cal-ev { font-size: .64rem; line-height: 1.25; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; background: #e8f0fb; color: #23508f; border-radius: 4px; padding: 1px 2px; }
+  .cal-ev.is-closed { background: #f6d9d6; color: #a12b21; font-weight: 700; }
+  .cal-hol { font-size: .6rem; line-height: 1.2; color: #c0392b; text-align: center; overflow: hidden; white-space: nowrap; }
+  .cal-mark { align-self: center; font-size: .64rem; font-weight: 700; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+  .cal-mark.is-use { background: #e3f3e6; color: #1e6b33; }
+  .cal-mark.is-absent { background: #ececec; color: #777; }
+  .cal-count { margin-top: auto; align-self: flex-end; font-size: .64rem; color: #777; white-space: nowrap; }
+  .cal-info { position: absolute; top: 3px; right: 3px; font-size: .62rem; color: #8a8378; }
+  /* 申請の画面：選べる日は押すと色が変わる */
+  .cal.is-apply .cal-cell.is-off { background: #f3f1ed; color: #a39c90; }
+  .cal.is-apply .cal-cell.is-off .cal-num { color: #a39c90; }
+  .cal.is-apply .cal-cell.is-off.is-use { background: #eef7f0; }
+  .cal.is-apply label.cal-cell { cursor: pointer; }
+  .cal.is-apply label.cal-cell input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .cal.is-apply label.cal-cell.is-on, .cal.is-apply label.cal-cell:has(input:checked) { background: var(--brand, var(--color-primary, #4e7ea8)); color: #fff; }
+  .cal.is-apply label.cal-cell.is-on .cal-num, .cal.is-apply label.cal-cell:has(input:checked) .cal-num { color: #fff; }
+  .cal.is-apply label.cal-cell:has(input:focus-visible) { outline: 3px solid #1d4f80; outline-offset: -3px; }
+  .cal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: #666; margin: 8px 2px 0; }
+  .cal-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 4px; border: 1px solid #ddd6ca; }
+  .cal-agenda { list-style: none; margin: 0; padding: 0; }
+  .cal-agenda li + li { margin-top: 6px; }
+  .cal-agenda a { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; color: inherit; text-decoration: none; }
+  .cal-agenda .d { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
+  .cal-agenda .t { flex: 1 1 auto; min-width: 0; }
+  .cal-agenda .is-closed { color: #a12b21; font-weight: 700; }
+  .cal-agenda small { color: #777; }
+  .cal-send { position: sticky; bottom: 0; z-index: 1040; background: #fff; border: 1px solid #cfd9e4; border-radius: 14px 14px 0 0; box-shadow: 0 -4px 14px rgba(0,0,0,.10); padding: 12px 14px; margin-top: 12px; }
+  .cal-send-row { display: flex; align-items: center; gap: 10px; }
+  .cal-send-row .n { flex: 1 1 auto; font-weight: 700; }
+  @media (max-width: 380px) { .cal-cell { min-height: 68px; padding: 3px 2px; } .cal-ev { font-size: .6rem; } }
+</style>

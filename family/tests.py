@@ -20,7 +20,7 @@ from records.models import DailyRecord
 from schedules.models import ScheduledVisit
 
 from . import services
-from .models import ContactBook, FamilyAccess, FamilyMessage, ParentNote
+from .models import ContactBook, DayEvent, FamilyAccess, FamilyMessage, ParentNote, UseRequest
 
 
 def _body(text, user_id='U1'):
@@ -90,7 +90,7 @@ class EnterTests(Base):
         # できた画面（欠席連絡・その他の連絡）は「準備中」を出さず、その画面へ
         self.assertRedirects(self.client.get(reverse('family:page', args=['absence'])), reverse('family:absence'))
         self.assertIn(f'href="{reverse("family:absence")}"', html)
-        self.assertEqual(html.count('class="fm-soon"'), 4)        # 連絡帳 2 つ・欠席連絡・その他の連絡はできている
+        self.assertEqual(html.count('class="fm-soon"'), 3)        # 連絡帳 2 つ・欠席連絡・その他の連絡・利用日申請はできている
         self.assertEqual(self.client.get(reverse('family:page', args=['nope'])).status_code, 404)
 
     def test_without_link_is_closed(self):
@@ -670,3 +670,161 @@ class BookTests(Base):
         html = self.sc.get(reverse('facilities:home_icons')).content.decode()
         self.assertIn(f'href="{reverse("family:staff_book")}"', html)
         self.assertEqual(html.count('class="ih-soon"'), 1)                              # 残りは お知らせ だけ
+
+
+class CalendarTests(Base):
+    """予定のカレンダー（職員と保護者で同じもの）・利用日申請（保護者／職員が代わりに）→ 来所予定・実績記録票へ"""
+
+    def setUp(self):
+        super().setUp()
+        from . import yotei
+        self.yotei = yotei
+        self.today = timezone.localdate()
+        self.d1 = self.today + datetime.timedelta(days=3)
+        self.d2 = self.today + datetime.timedelta(days=4)
+        self.ym = f'{self.d1.year}-{self.d1.month:02d}'
+        self.enter()
+        self.client.post(reverse('family:child'), {'child': self.taro.pk})
+        self.sc = self.client_class()
+        self.sc.force_login(self.staff)
+        self.cal = reverse('family:calendar')
+        self.scal = reverse('family:staff_calendar')
+
+    def test_calendar_starts_on_sunday(self):
+        view = self.yotei.month_view(self.f, 2026, 12)
+        self.assertEqual(view['week_head'][0], '日')
+        self.assertEqual([c['date'].weekday() for c in view['weeks'][0]], [6, 0, 1, 2, 3, 4, 5])
+        self.assertEqual(view['weeks'][0][2]['date'], datetime.date(2026, 12, 1))     # 2026-12-01 は火曜
+        self.assertFalse(view['weeks'][0][0]['in_month'])
+        self.assertEqual((view['prev_ym'], view['next_ym']), ('2026-11', '2027-01'))
+
+    def test_staff_edits_month_and_parent_sees_same(self):
+        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': '動物園へおでかけ',
+                                       f't_{self.d2.isoformat()}': '', f'c_{self.d2.isoformat()}': 'on'}, follow=True)
+        self.assertContains(res, '2 日ぶんの予定を保存しました。')
+        self.assertContains(res, '動物園へおでかけ')
+        ev = DayEvent.objects.get(facility=self.f, date=self.d2)
+        self.assertEqual((ev.is_closed, ev.label), (True, '休業日'))
+        html = self.client.get(f'{self.cal}?ym={self.ym}').content.decode()
+        self.assertIn('動物園へおでかけ', html)
+        self.assertIn('休業日', html)
+        self.assertNotIn('name="t_', html)           # 保護者は見るだけ
+        # 何も変えずに保存 → 変わらない。空にすると消える
+        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': '動物園へおでかけ'}, follow=True)
+        self.assertContains(res, '変わったところはありません。')
+        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': ''})
+        self.assertFalse(DayEvent.objects.filter(date=self.d1).exists())
+
+    def test_day_page_detail_and_month_save_keeps_detail(self):
+        url = reverse('family:staff_calendar_day', args=[self.d1.isoformat()])
+        res = self.sc.post(url, {'title': 'クッキング', 'detail': '持ち物：エプロン\n参加費：300 円'}, follow=True)
+        self.assertContains(res, f'{self.d1.month}月{self.d1.day}日の予定を保存しました。')
+        # 月の編集で題だけ直しても、詳しい内容は消えない
+        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': 'クッキング（カレー）'})
+        ev = DayEvent.objects.get(date=self.d1)
+        self.assertEqual((ev.title, ev.detail), ('クッキング（カレー）', '持ち物：エプロン\n参加費：300 円'))
+        html = self.client.get(reverse('family:calendar_day', args=[self.d1.isoformat()])).content.decode()
+        self.assertIn('クッキング（カレー）', html)
+        self.assertIn('参加費：300 円', html)
+        self.assertNotIn('<textarea', html)
+        self.assertIn('利用の予定はありません', html)
+        self.assertEqual(self.client.get(reverse('family:calendar_day', args=['2026-13-40'])).status_code, 404)
+        self.assertEqual(self.sc.get(reverse('family:staff_calendar_day', args=['abc'])).status_code, 404)
+
+    def test_parent_applies_and_visit_is_created(self):
+        html = self.client.get(f'{self.cal}?ym={self.ym}&apply=1').content.decode()
+        self.assertIn(f'value="{self.d1.isoformat()}"', html)
+        res = self.client.post(self.cal, {'ym': self.ym, 'dates': [self.d1.isoformat(), self.d2.isoformat()]}, follow=True)
+        self.assertContains(res, '利用日を申請しました')
+        v = ScheduledVisit.objects.get(beneficiary=self.taro, date=self.d1)
+        self.assertEqual((v.facility, v.status), (self.f, 'scheduled'))
+        self.assertEqual(UseRequest.objects.filter(beneficiary=self.taro, via='parent', seen_at__isnull=True).count(), 2)
+        self.assertFalse(ScheduledVisit.objects.filter(beneficiary=self.hana).exists())      # きょうだいには入れない
+        # 申請した日は、もう選べない（利用の印が付く）
+        html = self.client.get(f'{self.cal}?ym={self.ym}&apply=1').content.decode()
+        self.assertNotIn(f'value="{self.d1.isoformat()}"', html)
+        self.assertIn('cal-mark is-use', html)
+        # 実績記録票の日ごとの一覧に出る
+        self.assertContains(self.sc.get(reverse('schedules:jisseki') + f'?date={self.d1.isoformat()}'), '見本 太郎')
+        # 同じ日をもう一度送っても増えない
+        res = self.client.post(self.cal, {'ym': self.ym, 'dates': [self.d1.isoformat()]}, follow=True)
+        self.assertContains(res, '申請できませんでした')
+        self.assertEqual(UseRequest.objects.count(), 2)
+
+    def test_parent_cannot_apply_today_past_far_future_or_closed_day(self):
+        DayEvent.objects.create(facility=self.f, date=self.d2, is_closed=True)
+        far = self.today + datetime.timedelta(days=200)
+        res = self.client.post(self.cal, {'ym': self.ym, 'dates': [
+            self.today.isoformat(), (self.today - datetime.timedelta(days=1)).isoformat(), far.isoformat(), 'abc']})
+        self.assertIn('err=1', res['Location'])
+        res = self.client.post(self.cal, {'ym': self.ym, 'dates': [self.d2.isoformat()]}, follow=True)
+        self.assertContains(res, '申請できませんでした')
+        self.assertFalse(ScheduledVisit.objects.exists())
+        self.assertFalse(UseRequest.objects.exists())
+        html = self.client.get(f'{self.cal}?ym={self.ym}&apply=1').content.decode()
+        self.assertNotIn(f'value="{self.d2.isoformat()}"', html)
+        self.assertNotIn(f'value="{self.today.isoformat()}"', html)
+
+    def test_staff_sees_new_requests_and_marks_seen(self):
+        self.client.post(self.cal, {'ym': self.ym, 'dates': [self.d1.isoformat()]})
+        html = self.sc.get(self.scal).content.decode()
+        self.assertIn('新しい利用日申請が届いています', html)
+        self.assertIn('見本 太郎', html)
+        self.assertEqual(self.yotei.unseen_count(self.f), 1)
+        home = self.sc.get(reverse('facilities:home_icons')).content.decode()
+        self.assertIn('ih-badge', home)
+        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'seen'}, follow=True)
+        self.assertContains(res, '確認済みにしました')
+        self.assertNotContains(res, '新しい利用日申請が届いています')
+        self.assertEqual(self.yotei.unseen_count(self.f), 0)
+        self.assertEqual(UseRequest.objects.get().seen_by, self.staff)
+
+    def test_staff_applies_on_behalf(self):
+        url = reverse('family:staff_apply')
+        html = self.sc.get(url).content.decode()
+        self.assertIn('見本 太郎', html)
+        self.assertNotIn('name="dates"', html)
+        html = self.sc.get(f'{url}?ym={self.ym}&child={self.jiro.pk}').content.decode()
+        self.assertIn(f'value="{self.d1.isoformat()}"', html)
+        past = self.today - datetime.timedelta(days=2)
+        res = self.sc.post(url, {'ym': self.ym, 'child': self.jiro.pk, 'dates': [self.d1.isoformat(), past.isoformat()]}, follow=True)
+        self.assertContains(res, '架空 次郎 さんの利用日を 2 日ぶん入れました')
+        self.assertEqual(ScheduledVisit.objects.filter(beneficiary=self.jiro).count(), 2)
+        r = UseRequest.objects.filter(beneficiary=self.jiro).first()
+        self.assertEqual((r.via, r.staff, r.seen_at is not None), ('staff', self.staff, True))
+        self.assertEqual(self.yotei.unseen_count(self.f), 0)          # 職員が入れたものは、知らせに出さない
+        # 日にちを選ばずに送る／よその事業所の子
+        self.assertContains(self.sc.post(url, {'ym': self.ym, 'child': self.jiro.pk}, follow=True), '日にちを選んでから')
+        yoso = Beneficiary.objects.create(facility=self.other, last_name='他所', first_name='三郎', last_name_kana='よそ',
+                                          first_name_kana='さぶろう', date_of_birth=datetime.date(2016, 4, 1))
+        self.assertEqual(self.sc.post(url, {'ym': self.ym, 'child': yoso.pk, 'dates': [self.d1.isoformat()]}).status_code, 404)
+
+    def test_staff_calendar_shows_counts_and_is_per_facility(self):
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.taro, date=self.d1)
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.jiro, date=self.d1)
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.hana, date=self.d1, status='absent')
+        DayEvent.objects.create(facility=self.other, date=self.d1, title='よその予定')
+        html = self.sc.get(f'{self.scal}?ym={self.ym}').content.decode()
+        self.assertIn('<span class="cal-count">2人</span>', html)
+        self.assertNotIn('よその予定', html)
+        self.assertNotIn('よその予定', self.client.get(f'{self.cal}?ym={self.ym}').content.decode())
+        day = self.sc.get(reverse('family:staff_calendar_day', args=[self.d1.isoformat()])).content.decode()
+        self.assertIn('この日に来る予定の子（2 人）', day)
+
+    def test_parent_calendar_shows_own_child_only(self):
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=self.jiro, date=self.d1)
+        html = self.client.get(f'{self.cal}?ym={self.ym}').content.decode()
+        self.assertEqual(html.count('cal-mark is-use'), 1)            # 凡例の 1 つだけ（よその子の予定は出ない）
+        self.assertNotIn('class="cal-count"', html)
+        self.assertNotIn('架空 次郎', html)
+
+    def test_gates(self):
+        plain = Facility.objects.create(name='ふつうの事業所')
+        staff = StaffAccount.objects.create_user('plain_admin2', password='pw12345678', facility=plain, role=StaffAccount.ROLE_ADMIN)
+        c = self.client_class()
+        c.force_login(staff)
+        for name in ('family:staff_calendar', 'family:staff_apply'):
+            self.assertEqual(c.get(reverse(name)).status_code, 404)
+        self.assertEqual(self.client_class().get(self.scal).status_code, 302)                   # ログインが要る
+        self.assertEqual(self.client_class().get(self.cal).status_code, 403)                    # 入場の印が要る
+        self.assertEqual(self.client_class().post(self.cal, {'dates': [self.d1.isoformat()]}).status_code, 403)

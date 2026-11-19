@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}代わりに利用日を申請する — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}利用日申請（職員が代わりに）{% endblock %}
+{% block nav_family_calendar %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% include 'family/_cal_style.html' %}{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_calendar' %}?ym={{ ym }}" class="small"><i class="bi bi-chevron-left"></i> カレンダーへ</a></div>
+  <form method="get" class="mb-2">
+    <input type="hidden" name="ym" value="{{ ym }}">
+    <label for="ap-child" class="form-label fw-bold">どの子の利用日ですか（口頭・紙で受けた申請を、代わりに入れます）</label>
+    <select name="child" id="ap-child" class="form-select form-select-lg" onchange="this.form.submit()">
+      <option value="">— 子どもを選ぶ —</option>
+      {% for b in children %}<option value="{{ b.pk }}"{% if child and b.pk == child.pk %} selected{% endif %}>{{ b.full_name }}</option>{% endfor %}
+    </select>
+    <noscript><button type="submit" class="btn btn-outline-secondary mt-2">この子のカレンダーを出す</button></noscript>
+  </form>
+
+  {% if child %}
+  {% include 'family/_cal_nav.html' %}
+  <form method="post" id="cal-form">
+    {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}"><input type="hidden" name="child" value="{{ child.pk }}">
+    <div class="small text-muted mb-2">{{ child.full_name }} さんが利用する日を押して、色を変えてください。</div>
+    {% include 'family/_cal_grid.html' %}
+    <div class="cal-legend">
+      <span><i style="background:var(--color-primary, #4e7ea8);"></i>選んだ日</span>
+      <span><i style="background:#eef7f0;"></i>利用の予定がある日</span>
+      <span><i style="background:#f3f1ed;"></i>選べない日（休業日など）</span>
+    </div>
+    <div class="cal-send">
+      <div class="cal-send-row"><span class="n" id="cal-n">日にちを押して選んでください</span></div>
+      <button type="submit" class="btn btn-primary w-100 fw-bold py-2 mt-2" id="cal-send-btn">この日を利用日として入れる</button>
+    </div>
+    <div class="small text-muted mt-2">入れた日は来所予定になり、連絡帳・日誌・実績記録票の一覧に出ます。月を替えると、選んだ日は消えます（月ごとに入れてください）。</div>
+  </form>
+  {% include 'family/_cal_pick_js.html' %}
+  {% endif %}
+</div>
+{% endblock %}

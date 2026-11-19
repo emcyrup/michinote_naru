@@ -18,7 +18,7 @@ from beneficiaries.models import Guardian
 from line_integration.sending import push_text
 
 from . import services
-from .models import ContactBook, FamilyAccess, FamilyMessage, ParentNote
+from .models import ContactBook, DayEvent, FamilyAccess, FamilyMessage, ParentNote, UseRequest
 
 # 入場の印の有効期間（これを過ぎたら、LINE のリンクから入り直す）
 SESSION_DAYS = 30
@@ -30,7 +30,7 @@ FAMILY_ICONS = [
     {'key': 'absence', 'label': '欠席連絡', 'icon': '', 'text': '欠', 'url': 'family:absence'},
     {'key': 'message', 'label': 'その他の連絡', 'icon': 'bi-telephone', 'url': 'family:message'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check'},
-    {'key': 'request', 'label': '利用日申請', 'icon': 'bi-calendar3'},
+    {'key': 'request', 'label': '利用日申請', 'icon': 'bi-calendar3', 'url': 'family:calendar'},
     {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope'},
     {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text'},
 ]
@@ -454,3 +454,179 @@ class StaffBookEditView(LoginRequiredMixin, View):
         else:
             messages.info(request, '内容が変わっていないので、送り直していません。')
         return redirect(f'{reverse("family:staff_book")}?date={self.day.isoformat()}')
+
+
+# =============================================
+# 予定のカレンダーと利用日申請（family/yotei.py）
+# =============================================
+def _day_or_404(value):
+    try:
+        return datetime.date.fromisoformat(str(value))
+    except ValueError:
+        raise Http404
+
+
+class CalendarView(FamilyMixin, View):
+    """保護者ページ「利用日申請」：職員の『予定』と同じカレンダー（見るだけ）。「利用日を申請する」で日にちを選んで送る"""
+
+    def get(self, request):
+        from django.urls import reverse
+        from . import yotei
+        year, month = yotei.parse_ym(request.GET.get('ym'))
+        applying = request.GET.get('apply') == '1'
+        window = yotei.parent_window()
+        view = yotei.month_view(self.facility, year, month, child=self.child, window=window if applying else None)
+        flash = request.session.pop('family_flash_request', None) if request.GET.get('done') == '1' else None
+        if flash:
+            flash = {k: [datetime.date.fromisoformat(v) for v in vs] for k, vs in flash.items()}
+        return render(request, 'family/calendar.html', {
+            **self.base_context(), **view, 'cal_apply': applying, 'cal_day_base': reverse('family:calendar') + 'day/',
+            'cal_query': '&apply=1' if applying else '', 'window': window, 'flash': flash,
+            'error': '日にちを選んでから送信してください。' if request.GET.get('err') == '1' else '',
+            'can_pick_any': any(c.get('can_pick') for w in view['weeks'] for c in w),
+        })
+
+    def post(self, request):
+        from django.urls import reverse
+        from . import yotei
+        year, month = yotei.parse_ym(request.POST.get('ym'))
+        ym = f'{year}-{month:02d}'
+        days = yotei.clean_days(request.POST.getlist('dates'), yotei.parent_window())
+        if not days:
+            return redirect(f'{reverse("family:calendar")}?ym={ym}&apply=1&err=1')
+        guardian = next(g for g in self.guardians if g.beneficiary_id == self.child.pk)
+        made, skipped = yotei.apply_days(self.facility, self.child, days, via='parent',
+                                         line_user_id=self.access.line_user_id, sender_name=services.sender_label(guardian))
+        request.session['family_flash_request'] = {'made': [d.isoformat() for d in made], 'skipped': [d.isoformat() for d in skipped]}
+        return redirect(f'{reverse("family:calendar")}?ym={ym}&done=1')
+
+
+class CalendarDayView(FamilyMixin, View):
+    """保護者ページ：日付を押したときの画面（その日の予定・持ち物や参加費などの詳しい内容）"""
+
+    def get(self, request, day):
+        from . import yotei
+        day = _day_or_404(day)
+        return render(request, 'family/calendar_day.html', {**self.base_context(), **yotei.day_info(self.facility, day, self.child),
+                                                            'ym': f'{day.year}-{day.month:02d}'})
+
+
+class StaffCalendarMixin(LoginRequiredMixin):
+    """職員の『予定』（カレンダー）：アイコンのホームか保護者ページを使う事業所だけ"""
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            facility = getattr(request.user, 'facility', None)
+            if facility is None or not (facility.home_icons or facility.use_family_page):
+                raise Http404
+            self.facility = facility
+        return super().dispatch(request, *args, **kwargs)
+
+
+class StaffCalendarView(StaffCalendarMixin, View):
+    """予定：日曜始まりのカレンダー。「編集」で、日付ごとに休業日・活動の予定・お出かけ先を入れる。保護者ページにも同じものが出る"""
+
+    def get(self, request):
+        from django.urls import reverse
+        from . import yotei
+        year, month = yotei.parse_ym(request.GET.get('ym'))
+        editing = request.GET.get('edit') == '1'
+        view = yotei.month_view(self.facility, year, month)
+        return render(request, 'family/staff_calendar.html', {
+            **view, 'editing': editing, 'cal_day_base': reverse('family:staff_calendar') + 'day/', 'cal_query': '&edit=1' if editing else '',
+            'days': [c for w in view['weeks'] for c in w if c['in_month']], 'title_max': DayEvent.TITLE_MAX,
+            'groups': yotei.unseen_groups(self.facility) if self.facility.use_family_page else [],
+        })
+
+    def post(self, request):
+        from django.urls import reverse
+        from . import yotei
+        year, month = yotei.parse_ym(request.POST.get('ym'))
+        back = f'{reverse("family:staff_calendar")}?ym={year}-{month:02d}'
+        if request.POST.get('action') == 'seen':
+            n = yotei.mark_seen(self.facility, request.user)
+            if n:
+                messages.success(request, '利用日申請を確認済みにしました。')
+            return redirect(back)
+        first, last = yotei.month_span(year, month)
+        changed, d = 0, first
+        while d <= last:
+            iso = d.isoformat()
+            if f't_{iso}' in request.POST:
+                changed += yotei.save_event(self.facility, d, request.POST.get(f't_{iso}', ''), f'c_{iso}' in request.POST,
+                                            '', request.user, keep_detail=True)
+            d += datetime.timedelta(days=1)
+        messages.success(request, f'{changed} 日ぶんの予定を保存しました。' if changed else '変わったところはありません。')
+        return redirect(back)
+
+
+class StaffCalendarDayView(StaffCalendarMixin, View):
+    """予定の 1 日ぶん：休業日・予定・詳しい内容（持ち物・参加費など）を書く。その日に来る子も出す"""
+
+    def context(self, day, **extra):
+        from schedules.daylist import day_visits
+        from . import yotei
+        coming, absent = day_visits(self.facility, day)
+        requested = set(UseRequest.objects.filter(facility=self.facility, date=day).values_list('beneficiary_id', flat=True))
+        for v in coming + absent:
+            v.requested = v.beneficiary_id in requested
+        return {**yotei.day_info(self.facility, day), 'coming': coming, 'absent': absent, 'ym': f'{day.year}-{day.month:02d}',
+                'title_max': DayEvent.TITLE_MAX, 'detail_max': DayEvent.DETAIL_MAX, **extra}
+
+    def get(self, request, day):
+        return render(request, 'family/staff_calendar_day.html', self.context(_day_or_404(day)))
+
+    def post(self, request, day):
+        from django.urls import reverse
+        from . import yotei
+        day = _day_or_404(day)
+        p = request.POST
+        changed = yotei.save_event(self.facility, day, p.get('title', ''), 'is_closed' in p, p.get('detail', ''), request.user)
+        messages.success(request, f'{day.month}月{day.day}日の予定を保存しました。' if changed else '変わったところはありません。')
+        return redirect(f'{reverse("family:staff_calendar")}?ym={day.year}-{day.month:02d}')
+
+
+class StaffApplyView(StaffCalendarMixin, View):
+    """職員が代わりに利用日を申請する（保護者から口頭・紙で受けたとき）。保護者ページと同じように、カレンダーで日にちを選ぶ"""
+
+    def children(self):
+        from beneficiaries.models import Beneficiary
+        return Beneficiary.objects.filter(facility=self.facility, status='active') \
+            .order_by('last_name_kana', 'first_name_kana', 'pk')
+
+    def child_of(self, value):
+        try:
+            return self.children().filter(pk=int(value)).first()
+        except (TypeError, ValueError):
+            return None
+
+    def get(self, request):
+        from . import yotei
+        year, month = yotei.parse_ym(request.GET.get('ym'))
+        child = self.child_of(request.GET.get('child'))
+        view = yotei.month_view(self.facility, year, month, child=child, window=yotei.staff_window()) if child else \
+            yotei.month_view(self.facility, year, month)
+        return render(request, 'family/staff_calendar_apply.html', {
+            **view, 'children': self.children(), 'child': child, 'cal_apply': bool(child),
+            'cal_query': f'&child={child.pk}' if child else '',
+        })
+
+    def post(self, request):
+        from django.urls import reverse
+        from . import yotei
+        year, month = yotei.parse_ym(request.POST.get('ym'))
+        child = self.child_of(request.POST.get('child'))
+        if child is None:
+            raise Http404
+        back = f'{reverse("family:staff_apply")}?ym={year}-{month:02d}&child={child.pk}'
+        days = yotei.clean_days(request.POST.getlist('dates'), yotei.staff_window())
+        if not days:
+            messages.error(request, '日にちを選んでから送信してください。')
+            return redirect(back)
+        made, skipped = yotei.apply_days(self.facility, child, days, via='staff', staff=request.user)
+        label = '・'.join(f'{d.month}/{d.day}' for d in made)
+        if made:
+            messages.success(request, f'{child.full_name} さんの利用日を {len(made)} 日ぶん入れました（{label}）。')
+        if skipped:
+            messages.warning(request, f'{len(skipped)} 日ぶんは入れていません（休業日か、すでに予定のある日）。')
+        return redirect(back)

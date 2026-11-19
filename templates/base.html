@@ -343,6 +343,15 @@
           <span>支援計画</span>
         </a>
       </li>
+      {% if features.home_icons or features.family_page %}
+      <li>
+        <a class="sidebar-nav-item {% block nav_family_calendar %}{% endblock %}" href="{% url 'family:staff_calendar' %}">
+          <i class="bi bi-calendar-event"></i>
+          <span>行事・利用日申請</span>
+          {% if family_requests_unseen %}<span class="badge rounded-pill ms-auto" style="background:#d63a2f;">{{ family_requests_unseen }}</span>{% endif %}
+        </a>
+      </li>
+      {% endif %}
       {% if features.home_icons %}
       <li>
         <a class="sidebar-nav-item {% block nav_jisseki %}{% endblock %}" href="{% url 'schedules:jisseki' %}">

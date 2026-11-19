@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}予定（{{ year }}年{{ month }}月） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}予定{% endblock %}
+{% block nav_family_calendar %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% include 'family/_cal_style.html' %}
+<style>
+  .cal-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  .cal-tools .btn { flex: 1 1 auto; }
+  .cal-req { background: #fff6e2; border: 1px solid #e8b25a; border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
+  .cal-req ul { margin: 6px 0 8px; padding-left: 1.1em; }
+  .cal-edit { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
+  .cal-edit li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #eee9e0; }
+  .cal-edit li:first-child { border-top: 0; }
+  .cal-edit .d { flex: 0 0 4.6em; font-weight: 700; white-space: nowrap; }
+  .cal-edit .is-sun .d { color: #c0392b; } .cal-edit .is-sat .d { color: #2c63b0; }
+  .cal-edit label.c { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; margin: 0; font-size: .82rem; white-space: nowrap; cursor: pointer; }
+  .cal-edit label.c input { width: 20px; height: 20px; }
+  .cal-edit input[type=text] { flex: 1 1 auto; min-width: 0; font-size: 1rem; padding: 6px 8px; border: 1px solid #cfc8bb; border-radius: 8px; }
+  .cal-edit li.is-closed { background: #f4eeee; }
+  .cal-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; margin-top: 10px; display: flex; gap: 8px; }
+  .cal-save .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .cal-save { padding-right: 76px; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% if groups %}
+  <div class="cal-req" id="cal-req">
+    <div class="fw-bold"><i class="bi bi-bell-fill"></i> 保護者から、新しい利用日申請が届いています</div>
+    <ul>
+      {% for g in groups %}
+      <li><b>{{ g.beneficiary.full_name }}</b> さん：{% for d in g.days %}{{ d|date:'n/j（D）' }}{% if not forloop.last %}・{% endif %}{% endfor %}
+        <small class="text-muted">（{{ g.at|date:'n/j H:i' }}{% if g.sender %} {{ g.sender }}{% endif %}）</small></li>
+      {% endfor %}
+    </ul>
+    <div class="small text-muted mb-2">申請された日は、もう来所予定に入っています（連絡帳・日誌・実績記録票の一覧に出ます）。</div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}">
+      <button type="submit" name="action" value="seen" class="btn btn-sm btn-warning">確認しました</button></form>
+  </div>
+  {% endif %}
+
+  {% include 'family/_cal_nav.html' %}
+
+  {% if editing %}
+  <form method="post" id="cal-edit-form">
+    {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}">
+    <div class="small text-muted mb-2">日付ごとに、休業日・活動の予定・お出かけ先を入れます。保護者ページのカレンダーにも同じものが出ます。持ち物・参加費などの詳しい内容は、カレンダーの日付を押して書きます。</div>
+    <ul class="cal-edit">
+      {% for c in days %}
+      <li class="{% if c.is_sun %}is-sun{% elif c.is_sat %}is-sat{% endif %}{% if c.is_closed %} is-closed{% endif %}">
+        <span class="d">{{ c.date.day }}日（{{ c.weekday }}）</span>
+        <label class="c"><input type="checkbox" name="c_{{ c.iso }}"{% if c.is_closed %} checked{% endif %}> 休業日</label>
+        <input type="text" name="t_{{ c.iso }}" value="{{ c.event.title|default:'' }}" maxlength="{{ title_max }}" placeholder="{{ c.holiday|default:'予定・お出かけ先' }}" aria-label="{{ c.date.day }}日の予定">
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="cal-save">
+      <button type="submit" name="action" value="save" class="btn btn-primary">保存する</button>
+      <a href="?ym={{ ym }}" class="btn btn-outline-secondary">やめる</a>
+    </div>
+  </form>
+  {% else %}
+  {% include 'family/_cal_grid.html' %}
+  <div class="cal-legend">
+    <span>数字は、その日に来る予定の人数</span>
+    <span><i class="bi bi-info-circle-fill" style="border:0;width:auto;height:auto;color:#8a8378;"></i>詳しい内容あり</span>
+    <span>日付を押すと、その日の内容を書けます</span>
+  </div>
+  <div class="cal-tools">
+    <a href="?ym={{ ym }}&edit=1" class="btn btn-primary" id="cal-edit-btn"><i class="bi bi-pencil-square"></i> 編集</a>
+    <a href="{% url 'family:staff_apply' %}?ym={{ ym }}" class="btn btn-outline-primary"><i class="bi bi-calendar-plus"></i> 代わりに利用日を申請する</a>
+  </div>
+
+  {% if agenda %}
+  <div class="daylist-head">{{ month }}月の予定</div>
+  <ul class="cal-agenda">
+    {% for c in agenda %}
+    <li><a href="{{ cal_day_base }}{{ c.iso }}/">
+      <span class="d">{{ c.date|date:'j日' }}（{{ c.weekday }}）</span>
+      <span class="t{% if c.is_closed %} is-closed{% endif %}">{{ c.label|default:'（詳しい内容あり）' }}{% if c.has_detail %} <small><i class="bi bi-info-circle-fill"></i></small>{% endif %}</span>
+      <i class="bi bi-chevron-right text-muted"></i>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="text-center mt-3 small">
+    {% if features.schedule %}<a href="{% url 'schedules:calendar_month' year month %}">出欠・来所予定のまとめ作成へ</a>{% endif %}
+    {% if features.home_icons %}<span class="mx-2 text-muted">|</span><a href="{% url 'facilities:home_icons' %}"><i class="bi bi-chevron-left"></i> ホームへ</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
