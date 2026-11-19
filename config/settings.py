@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'surveys',
     'daily',
     'consultation',
+    'family',  # 保護者ページ（公式 LINE から開く）
     'mobile_api',  # 職員アプリ（iOS・Android）の API
 ]
 

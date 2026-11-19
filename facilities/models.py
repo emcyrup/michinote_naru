@@ -167,6 +167,11 @@ class Facility(models.Model):
     # 療育の画面（ゆあーず・オウル）で「帳票出力」（利用者ごとの実績記録票・記録一覧・名簿・計画一覧）を出す（2026-10-31 オウル）。標準の画面は常に出る
     use_reports = models.BooleanField(default=False, verbose_name='帳票出力を使う（療育の画面）',
                                       help_text='利用者ごとのサービス提供実績記録票・療育記録一覧、出欠一覧・業務日誌・名簿・個別支援計画一覧を PDF・CSV で出す画面。')
+    # 2026-11 事業所「成」の要望：職員のホームを大きなアイコンの並びに／公式 LINE から開く保護者ページ
+    home_icons = models.BooleanField(default=False, verbose_name='ホームをアイコンの並びにする',
+                                     help_text='職員のホームを、連絡帳・日誌・保護者からの連絡・実績記録票・予定・お知らせ・個別支援計画の大きなアイコンにします。')
+    use_family_page = models.BooleanField(default=False, verbose_name='保護者ページを使う',
+                                          help_text='公式 LINE につないだ保護者が、LINE から開く保護者向けの画面（連絡帳・欠席連絡・利用日申請・お知らせなど）。LINE連携が要ります。')
     use_daily_ops = models.BooleanField(default=False, verbose_name='毎日の運営を使う',
                                         help_text='クラス（小集団）の週間の活動計画と当日の記録（各児の療育記録に写す）、健康・生活の記録（体温・食事・排せつ・午睡・服薬と引き渡しカード）、発達検査の結果の推移。')
     # ログイン画面の「職員として新しく登録」で使うコード（空なら受け付けない）。登録した人は管理者が承認するまでログインできない

@@ -37,6 +37,9 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         facility = getattr(request.user, 'facility', None)
         if facility is not None and facility.is_planbook:
             return redirect('planbook:students')
+        # アイコンの並びのホーム（2026-11 成）。これまでのホーム（期限のお知らせなど）は ?full=1 で開ける
+        if facility is not None and facility.home_icons and request.GET.get('full') != '1':
+            return redirect('facilities:home_icons')
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -228,6 +231,8 @@ class FeatureSettingsView(LoginRequiredMixin, View):
         facility.use_daily_ops = 'use_daily_ops' in request.POST
         facility.use_consultation = 'use_consultation' in request.POST
         facility.use_reports = 'use_reports' in request.POST
+        facility.home_icons = 'home_icons' in request.POST
+        facility.use_family_page = 'use_family_page' in request.POST
         valid = [k for k, _ in Facility.JOURNAL_SECTIONS]
         keys = [k for k in request.POST.getlist('journal_sections') if k in valid]
         if not keys:
@@ -274,7 +279,7 @@ class FeatureSettingsView(LoginRequiredMixin, View):
                 facility.trial_ai_used = 0
         facility.save(update_fields=['use_billing', 'use_schedule', 'use_line', 'line_auto_send', 'journal_required', 'journal_min_chars',
                                      'use_reservation', 'use_therapy_record', 'therapy_voice_direct', 'knowledge_reflect', 'beneficiary_tools', 'schedule_tools', 'therapy_no_wording', 'therapy_no_cautions', 'plan_no_ai',
-                                     'use_transport', 'use_dev_assessment', 'use_survey', 'use_daily_ops', 'use_consultation', 'use_reports',
+                                     'use_transport', 'use_dev_assessment', 'use_survey', 'use_daily_ops', 'use_consultation', 'use_reports', 'home_icons', 'use_family_page',
                                      'journal_sections', 'form_set', 'layout', 'trial_ai_limit', 'trial_ai_used',
                                      'speech_words', 'word_rules', 'updated_at'])
         messages.success(request, '使う機能と日誌の項目を保存しました。')
@@ -523,3 +528,53 @@ class EditingView(LoginRequiredMixin, View):
             return JsonResponse({'ok': True})
         concurrency.touch(request.user.facility, kind, obj.pk, request.user)
         return JsonResponse({'ok': True, 'others': concurrency.others_editing(request.user.facility, kind, obj.pk, request.user)})
+
+
+# =============================================
+# アイコンの並びのホーム（2026-11 事業所「成」の要望。施設設定「ホームをアイコンの並びにする」）
+# =============================================
+# 作っていく順に、準備中の画面から本物の画面へ差し替える（url が None のものは「準備中」）
+STAFF_HOME_ICONS = [
+    {'key': 'renraku', 'label': '連絡帳', 'icon': 'bi-journal-text', 'url': None},
+    {'key': 'nisshi', 'label': '日誌', 'icon': 'bi-pencil-square', 'url': 'records:day'},
+    {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': None},
+    {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'reports:index'},
+    {'key': 'yotei', 'label': '予定', 'icon': 'bi-calendar3', 'url': 'schedules:calendar'},
+    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': None},
+    {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'support_plans:list'},
+]
+
+
+class HomeIconsView(LoginRequiredMixin, TemplateView):
+    """職員のホーム：大きなアイコンを 3 列に並べる"""
+    template_name = 'facilities/home_icons.html'
+
+    def get(self, request, *args, **kwargs):
+        facility = getattr(request.user, 'facility', None)
+        if facility is None or not facility.home_icons:
+            return redirect('/?full=1')
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+        ctx = super().get_context_data(**kwargs)
+        icons = []
+        for it in STAFF_HOME_ICONS:
+            url = reverse(it['url']) if it['url'] else reverse('facilities:soon', args=[it['key']])
+            icons.append({**it, 'href': url, 'soon': it['url'] is None})
+        ctx['icons'] = icons
+        return ctx
+
+
+class SoonView(LoginRequiredMixin, TemplateView):
+    """まだ作っていない画面の入口（アイコンのホームから）"""
+    template_name = 'facilities/soon.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        item = next((it for it in STAFF_HOME_ICONS if it['key'] == self.kwargs['key']), None)
+        if item is None:
+            from django.http import Http404
+            raise Http404
+        ctx['item'] = {**item, 'title': item['label'].replace('\n', '')}
+        return ctx

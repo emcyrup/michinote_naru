@@ -1,0 +1,16 @@
+{% extends 'family/base.html' %}
+{% block title %}保護者ページ{% endblock %}
+{% block content %}
+<div class="fm-card text-center">
+  {% if reason == 'left' %}
+  <div class="fw-bold">この端末で開くのをやめました</div>
+  <div class="small text-muted mt-2">もう一度開くときは、公式 LINE で「メニュー」と送って、届いたリンクから入ってください。</div>
+  {% elif reason == 'session' %}
+  <div class="fw-bold">保護者ページを開けません</div>
+  <div class="small text-muted mt-2">しばらく使っていなかったか、リンクが新しくなっています。公式 LINE で「メニュー」と送って、届いたリンクから入り直してください。</div>
+  {% else %}
+  <div class="fw-bold">このリンクは使えません</div>
+  <div class="small text-muted mt-2">リンクが新しくなったか、アドレスが途中で切れています。公式 LINE で「メニュー」と送ると、新しいリンクが届きます。</div>
+  {% endif %}
+</div>
+{% endblock %}
