@@ -1,5 +1,10 @@
 # 放課後等デイサービスのデモ事業所「放デイ　デモ」の環境（開発環境の AWS サーバー・別ポート・別の置き場所）
 
+> **このリポジトリ（emcyrup/michinote_naru）は事業所「成」用です（2026-11-20 に emcyrup/20260914note の `develop` から写しました）。**
+> 配備は Actions「Deploy (houdeidemo)」をブランチ **`main`** で手動実行します（下の文中の「ブランチ `develop`」は `main` に読み替えてください）。
+> ほかの事業所（ゆあーず・オウル・開発環境など）へ配備する仕組みは、このリポジトリから外してあります。
+> Secrets は、このリポジトリに `HOUDEIDEMO_DEPLOY_HOST`・`HOUDEIDEMO_DEPLOY_USER`・`HOUDEIDEMO_DEPLOY_SSH_KEY`（開発環境のサーバーと同じ値）と `HOUDEIDEMO_ADMIN_PASSWORD` を登録します。
+
 2026-11-06 の依頼：はびりすをベースに、見込み客に試用してもらう放課後等デイサービスのデモ事業所を作る。環境（アドレス・ポート・DB）はプロバイダが用意する。
 
 > **2026-11-09**：専用の環境が用意できた（アドレス `st-michinote.sample.ai-labo.cloud` → Gunicorn 8047、DB `michinotesample`、ユーザー `st_ai_labo_dbuser`）。

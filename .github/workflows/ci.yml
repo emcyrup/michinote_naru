@@ -1,10 +1,9 @@
-# Pull Request と main 以外への push でテストを回す（デプロイはしない）
+# Pull Request と push でテストを回す（デプロイはしない。配備は Actions「Deploy (houdeidemo)」を手で）
 name: CI
 
 on:
   pull_request:
   push:
-    branches-ignore: [main]
 
 jobs:
   test:

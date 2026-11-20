@@ -3,7 +3,9 @@
 # AWS 開発環境のサーバー（st-michinotedemo・コト／やすらぎの森／老健デモと同じサーバー）へデプロイ
 #   https://<HOUDEIDEMO_DOMAIN>/ → プロバイダ管理の nginx（HTTPS 終端）→ Gunicorn 127.0.0.1:<HOUDEIDEMO_PORT>
 #   置き場所 ~/michinotehoudei、DB <HOUDEIDEMO_DB_NAME>（ユーザー st_ai_labo_dbuser）。venv（~/env）は開発環境と共用
-#   Actions から手動で実行し、ブランチは develop を選ぶ（はびりすの機能は develop にある。介護の kyotaku／yasuragi は選ばない）
+#   Actions から手動で実行し、ブランチは main を選ぶ
+#   （このリポジトリ emcyrup/michinote_naru は成用。2026-11-20 に emcyrup/20260914note の develop から写した。それまでは元のリポジトリの develop から配備していた）
+#   サーバーの ~/michinotehoudei の取得元（origin）は、配備のたびにこのリポジトリに合わせる
 #   サーバー側は deploy/venv-deploy.sh が git checkout → pip → migrate → collectstatic → Gunicorn 再起動を行う
 #   手順は docs/DEPLOY_AWS_HOUDEIDEMO.md
 #
@@ -97,7 +99,7 @@ jobs:
     if: needs.test.outputs.ready == 'true'
     runs-on: ubuntu-latest
     concurrency:
-      # 開発環境と venv（~/env）を共用するので、Deploy (dev)・Deploy (kyotaku)・Manage と同じ列に並べて同時に pip を動かさない
+      # このリポジトリの中の配備・管理を同時に動かさない（venv ~/env は開発環境と共用。元のリポジトリの配備とは並ばないので、同じ時刻に流さない）
       group: deploy-dev
       cancel-in-progress: false
     steps:
@@ -150,6 +152,8 @@ jobs:
               gitauth clone --quiet "$REPO_URL" "$APP_DIR"
             fi
             cd "$APP_DIR"
+            # 取得元をこのリポジトリに合わせる（2026-11-20 までは emcyrup/20260914note から取っていた）
+            git remote set-url origin "$REPO_URL"
             gitauth fetch --quiet origin
             # DB の取り違えを防ぐ：ほかの環境の DB 名になっていれば止める
             DBN="$DB_IN"
@@ -157,8 +161,8 @@ jobs:
             case "$DBN" in kaigonotekyotaku|kaigonotemidorikai|kaigonotedemo|michinotedemo|michinoteyours|michinoteowl)
               echo "ERROR: DB 名が $DBN（ほかの環境の DB）です。放デイ デモの配備を止めました。サーバーの .env の DB_NAME を確かめてください。"; exit 1;; esac
             # はびりすの機能（請求デモ billing/demo.py）があり、介護のアプリ（kyotaku／yasuragi のブランチ）ではないコミットだけを出す
-            git cat-file -e "$SHA:billing/demo.py" 2>/dev/null || { echo "ERROR: このコミットには放デイの請求の機能がありません。ブランチ develop を選んで実行してください"; exit 1; }
-            if git cat-file -e "$SHA:kaigo/apps.py" 2>/dev/null; then echo "ERROR: 介護のブランチ（kyotaku／yasuragi）です。放デイのデモはブランチ develop を選んで実行してください"; exit 1; fi
+            git cat-file -e "$SHA:billing/demo.py" 2>/dev/null || { echo "ERROR: このコミットには放デイの請求の機能がありません。ブランチ main を選んで実行してください"; exit 1; }
+            if git cat-file -e "$SHA:kaigo/apps.py" 2>/dev/null; then echo "ERROR: 介護のアプリのコミットです。ブランチ main を選んで実行してください"; exit 1; fi
             # 配備先コミットのスクリプトと .env の雛形を先に取り出してから実行する
             git checkout --quiet "$SHA" -- deploy/venv-deploy.sh deploy/.env.houdeidemo-aws.example
             if [ ! -f .env ]; then
