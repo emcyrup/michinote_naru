@@ -542,7 +542,31 @@ STAFF_HOME_ICONS = [
     {'key': 'yotei', 'label': '予定', 'icon': 'bi-calendar3', 'url': 'family:staff_calendar'},
     {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': 'family:staff_notice', 'needs': 'family_page'},
     {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'support_plans:renewal'},
+    {'key': 'other', 'label': 'その他', 'icon': 'bi-grid-3x3-gap', 'url': 'facilities:home_other'},
 ]
+# 「その他」の中（職員だけ。保護者ページには出さない）。中身が決まったものから、準備中を本物の画面へ差し替える
+STAFF_OTHER_ICONS = [
+    {'key': 'sougei', 'label': '送迎記録', 'icon': 'bi-car-front', 'url': 'transport:day', 'needs': 'transport'},
+    {'key': 'kenshu', 'label': '研修', 'icon': 'bi-mortarboard', 'url': None},
+    {'key': 'plan_sheet', 'label': '支援計画シート', 'icon': 'bi-file-earmark-ruled', 'url': None},
+]
+
+
+def _icon_ready(it, facility):
+    """そのアイコンの先の画面を、この事業所で開けるか（開けなければ「準備中」の案内へ）"""
+    if not it['url']:
+        return False
+    if it.get('needs') == 'family_page':        # 保護者ページを使わない事業所では、保護者とやりとりする画面は開けない
+        return facility.use_family_page and facility.use_line
+    if it.get('needs') == 'transport':          # 送迎（配車表）を使う設定の事業所だけ
+        return facility.use_transport
+    return True
+
+
+def _icons_for(items, facility):
+    from django.urls import reverse
+    return [{**it, 'href': reverse(it['url']) if _icon_ready(it, facility) else reverse('facilities:soon', args=[it['key']]),
+             'soon': not _icon_ready(it, facility), 'badge': 0} for it in items]
 
 
 class HomeIconsView(LoginRequiredMixin, TemplateView):
@@ -556,15 +580,12 @@ class HomeIconsView(LoginRequiredMixin, TemplateView):
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
-        from django.urls import reverse
         ctx = super().get_context_data(**kwargs)
         facility = self.request.user.facility
-        icons = []
-        for it in STAFF_HOME_ICONS:
-            # 保護者ページを使わない事業所では、保護者からの連絡の画面は開けない（準備中の案内へ）
-            ready = bool(it['url']) and (it.get('needs') != 'family_page' or (facility.use_family_page and facility.use_line))
-            url = reverse(it['url']) if ready else reverse('facilities:soon', args=[it['key']])
-            icons.append({**it, 'href': url, 'soon': not ready, 'badge': 0})
+        icons = _icons_for(STAFF_HOME_ICONS, facility)
+        for it in icons:
+            if it['key'] == 'other':
+                it['soon'] = False          # 「その他」そのものは開ける（中に準備中のものがある）
         if facility.use_family_page:
             from family.services import unconfirmed_count
             n = unconfirmed_count(facility)
@@ -580,15 +601,36 @@ class HomeIconsView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+class HomeOtherView(LoginRequiredMixin, TemplateView):
+    """職員のホームの「その他」：送迎記録・研修・支援計画シートなど（アイコンのホームを使う事業所だけ）"""
+    template_name = 'facilities/home_other.html'
+
+    def get(self, request, *args, **kwargs):
+        facility = getattr(request.user, 'facility', None)
+        if facility is None or not facility.home_icons:
+            return redirect('/?full=1')
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['icons'] = _icons_for(STAFF_OTHER_ICONS, self.request.user.facility)
+        return ctx
+
+
 class SoonView(LoginRequiredMixin, TemplateView):
     """まだ作っていない画面の入口（アイコンのホームから）"""
     template_name = 'facilities/soon.html'
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        item = next((it for it in STAFF_HOME_ICONS if it['key'] == self.kwargs['key']), None)
+        from django.urls import reverse
+        key = self.kwargs['key']
+        item = next((it for it in STAFF_HOME_ICONS + STAFF_OTHER_ICONS if it['key'] == key), None)
         if item is None:
             from django.http import Http404
             raise Http404
+        in_other = any(it['key'] == key for it in STAFF_OTHER_ICONS)
+        ctx['back'] = {'url': reverse('facilities:home_other'), 'label': 'その他へ'} if in_other else \
+            {'url': reverse('facilities:home_icons'), 'label': 'ホームへ'}
         ctx['item'] = {**item, 'title': item['label'].replace('\n', '')}
         return ctx

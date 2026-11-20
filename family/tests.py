@@ -235,13 +235,40 @@ class StaffTests(Base):
         self.assertEqual(res.status_code, 302)
         self.assertIn('/accounts/login/', res['Location'])
 
+    def test_other_page_is_staff_only(self):
+        other = reverse('facilities:home_other')
+        self.assertIn(f'href="{other}"', self.client.get(reverse('facilities:home_icons')).content.decode())
+        html = self.client.get(other).content.decode()
+        for label in ('送迎記録', '研修', '支援計画シート'):
+            self.assertIn(f'<span class="ih-label">{label}</span>', html)
+        self.assertEqual(html.count('class="ih-soon"'), 3)            # 送迎を使わない設定なら、送迎記録も準備中
+        page = self.client.get(reverse('facilities:soon', args=['kenshu'])).content.decode()
+        self.assertIn('「研修」の画面は準備中です', page)
+        self.assertIn(f'href="{other}"', page)                        # 準備中の案内からは「その他」へ戻る
+        # 送迎を使う設定にすると、送迎記録はいまある送迎の画面へ
+        self.f.use_transport = True
+        self.f.save()
+        html = self.client.get(other).content.decode()
+        self.assertIn(f'href="{reverse("transport:day")}"', html)
+        self.assertEqual(html.count('class="ih-soon"'), 2)
+        # 保護者ページには「その他」を出さない
+        self.client.logout()
+        self.enter()
+        self.assertNotIn('その他</span>', self.client.get(reverse('family:home')).content.decode().replace('その他の連絡', ''))
+        # アイコンのホームを使わない事業所
+        self.f.home_icons = False
+        self.f.save()
+        self.client.force_login(self.staff)
+        self.assertRedirects(self.client.get(other), '/?full=1', fetch_redirect_response=False)
+
     def test_icon_home(self):
         res = self.client.get(reverse('facilities:dashboard'))
         self.assertRedirects(res, reverse('facilities:home_icons'))
         html = self.client.get(reverse('facilities:home_icons')).content.decode()
-        for label in ('連絡帳', '日誌', '保護者からの\n連絡', '実績記録票', '予定', 'お知らせ', '個別支援計画'):
+        for label in ('連絡帳', '日誌', '保護者からの\n連絡', '実績記録票', '予定', 'お知らせ', '個別支援計画', 'その他'):
             self.assertIn(f'<span class="ih-label">{label}</span>', html)
-        self.assertEqual(html.count('class="ih-icon"'), 7)
+        self.assertEqual(html.count('class="ih-icon"'), 8)
+        self.assertLess(html.index('個別支援計画</span>'), html.index('その他</span>'))        # 個別支援計画の横（次）
         self.assertIn(reverse('records:day'), html)
         # これまでのホームも開ける。準備中の画面
         self.assertEqual(self.client.get(reverse('facilities:dashboard') + '?full=1').status_code, 200)
