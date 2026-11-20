@@ -34,4 +34,5 @@ urlpatterns = [
     path('staff/inbox/<int:pk>/confirm/', views.StaffConfirmView.as_view(), name='staff_confirm'),
     path('staff/send-link/<int:guardian_pk>/', views.StaffSendLinkView.as_view(), name='staff_send_link'),
     path('staff/rotate-link/<int:guardian_pk>/', views.StaffRotateLinkView.as_view(), name='staff_rotate_link'),
+    path('staff/account/<int:guardian_pk>/', views.StaffAccountView.as_view(), name='staff_account'),
 ]

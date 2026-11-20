@@ -558,7 +558,7 @@ def _icon_ready(it, facility):
     if not it['url']:
         return False
     if it.get('needs') == 'family_page':        # 保護者ページを使わない事業所では、保護者とやりとりする画面は開けない
-        return facility.use_family_page and facility.use_line
+        return facility.use_family_page     # LINE連携が無くても開ける（保護者の入口はアプリのアカウントか公式 LINE）
     if it.get('needs') == 'transport':          # 送迎（配車表）を使う設定の事業所だけ
         return facility.use_transport
     return True

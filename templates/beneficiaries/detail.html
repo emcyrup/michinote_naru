@@ -361,7 +361,44 @@
                   </table>
                 </details>
                 {% endif %}
-                {% if features.family_page and g.line_linked %}
+                {% if features.family_page %}
+                {# 保護者アプリ（メールアドレスとパスワードで入る）のアカウント #}
+                <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
+                  <span class="small text-muted">保護者アプリ：</span>
+                  {% if g.family_link %}{% with acc=g.family_link.account %}
+                    <span class="badge {% if not acc.is_active %}bg-secondary{% elif acc.has_password %}text-bg-success{% else %}text-bg-warning text-dark{% endif %}" style="font-size:0.7rem;">{% if not acc.is_active %}停止中{% elif acc.has_password %}利用中{% else %}パスワード未設定{% endif %}</span>
+                    <span class="small text-muted">{{ acc.email }}</span>
+                    {% if acc.is_active %}
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}">{% csrf_token %}<input type="hidden" name="action" value="link">
+                      <button type="submit" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:0.75rem;"><i class="bi bi-key me-1"></i>パスワード設定のリンク</button>
+                    </form>
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}">{% csrf_token %}<input type="hidden" name="action" value="mail">
+                      <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.7rem;">メールで送る</button>
+                    </form>
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}"
+                          onsubmit="return confirm('このアカウントを止めますか？\n保護者アプリに入れなくなります（記録は残ります）。')">{% csrf_token %}<input type="hidden" name="action" value="stop">
+                      <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.7rem;">止める</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}">{% csrf_token %}<input type="hidden" name="action" value="resume">
+                      <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.7rem;">また使えるようにする</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}"
+                          onsubmit="return confirm('この保護者をアカウントから外しますか？\nメールアドレスを変えるときに使います。')">{% csrf_token %}<input type="hidden" name="action" value="unlink">
+                      <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.7rem;">アカウントを外す</button>
+                    </form>
+                  {% endwith %}{% elif g.email %}
+                    <form method="post" action="{% url 'family:staff_account' g.pk %}">{% csrf_token %}<input type="hidden" name="action" value="create">
+                      <button type="submit" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size:0.75rem;"><i class="bi bi-person-plus me-1"></i>アカウントを作る</button>
+                    </form>
+                    <span class="small text-muted">（{{ g.email }}）</span>
+                  {% else %}
+                    <span class="small text-muted">メールアドレスを入れると、アカウントを作れます（「編集」から）</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if features.family_page and features.line and g.line_linked %}
                 <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
                   <span class="small text-muted">保護者ページ：</span>
                   <form method="post" action="{% url 'family:staff_send_link' g.pk %}">{% csrf_token %}

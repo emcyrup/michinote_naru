@@ -330,6 +330,61 @@ class StaffRotateLinkView(StaffGuardianMixin, View):
         return self.back(g)
 
 
+class StaffAccountView(StaffGuardianMixin, View):
+    """
+    保護者アプリ（メールアドレスとパスワードで入る別アプリ）のアカウントを、利用者の画面の保護者の欄から扱う。
+    action：create（作る）／link（パスワードを決めるリンクを出す）／mail（そのリンクをメールで送る）／stop・resume（止める・戻す）／unlink（外す）
+    """
+
+    def post(self, request, guardian_pk):
+        from . import accounts
+        g = self.guardian(request, guardian_pk)
+        if not request.user.facility.use_family_page:
+            messages.error(request, '施設設定の「保護者ページを使う」がオフです。')
+            return self.back(g)
+        action = request.POST.get('action')
+        link = getattr(g, 'family_link', None)
+        account = link.account if link is not None else None
+        try:
+            if action == 'create':
+                account, created = accounts.link_guardian(g, request.user)
+                if created:
+                    messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを作りました（{account.email}）。'
+                                              '「パスワード設定のリンク」を出して、保護者へ渡してください。')
+                else:
+                    messages.success(request, f'{g.full_name} さんを、同じメールアドレスのアカウント（{account.email}）に結びつけました。'
+                                              'きょうだいを 1 つのアカウントで見られます。')
+            elif account is None:
+                messages.error(request, 'この保護者には、まだ保護者アプリのアカウントがありません。')
+            elif action == 'link':
+                url = accounts.setup_url(account) if account.is_active else ''
+                if url:
+                    messages.success(request, f'{g.full_name} さんのパスワード設定のリンクです（{accounts.SETUP_DAYS} 日以内・1 回かぎり）。'
+                                              f'保護者へ渡してください： {url}')
+                elif not account.is_active:
+                    messages.error(request, 'このアカウントは停止中です。先に「また使えるようにする」を押してください。')
+                else:
+                    messages.error(request, '保護者アプリのアドレスが、この環境に設定されていません（.env の FAMILY_APP_URL）。')
+            elif action == 'mail':
+                ok, why = accounts.send_setup_mail(account) if account.is_active else (False, 'このアカウントは停止中です')
+                if ok:
+                    messages.success(request, f'{account.email} へ、パスワード設定のリンクを送りました。')
+                else:
+                    messages.error(request, f'{why}。「パスワード設定のリンク」を出して、保護者へ渡してください。')
+            elif action in ('stop', 'resume'):
+                accounts.set_active(account, action == 'resume')
+                messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを'
+                                          + ('また使えるようにしました。' if action == 'resume' else '止めました（入れなくなります。記録は残ります）。'))
+            elif action == 'unlink':
+                accounts.unlink_guardian(g)
+                messages.success(request, f'{g.full_name} さんを保護者アプリのアカウントから外しました。')
+            else:
+                messages.error(request, '操作が分かりませんでした。')
+        except accounts.AccountError as e:
+            messages.error(request, str(e))
+        return self.back(g)
+
+
 class StaffInboxView(LoginRequiredMixin, View):
     """保護者からの連絡（日ごと）。この日が対象の連絡は赤い字、この日に届いた先の日付の連絡は黒い字で、確認すると対象日へ移る"""
 

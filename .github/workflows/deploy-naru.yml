@@ -53,6 +53,8 @@ permissions:
 env:
   DOMAIN: ${{ format('{0}naru{1}.ai-labo.cloud', inputs.target != 'prod' && 'st-' || '', inputs.app == 'family' && '-family' || '') }}
   PORT_NUM: ${{ inputs.app == 'family' && '8050' || '8049' }}
+  # 保護者アプリのアドレス（職員の画面が出す「パスワード設定のリンク」の先頭。.env の FAMILY_APP_URL）
+  FAMILY_URL: ${{ format('https://{0}naru-family.ai-labo.cloud', inputs.target != 'prod' && 'st-' || '') }}
   DB_NAME_NEW: ${{ inputs.target == 'prod' && 'naru_app_prod' || 'naru_app' }}
   DB_USER_NEW: ${{ inputs.target == 'prod' && 'naru_runtime_prod' || 'naru_runtime' }}
 
@@ -165,8 +167,8 @@ jobs:
           # 秘密の値はコマンド行（サーバーのプロセス一覧に出る）に書かず、標準入力の先頭で渡す
           {
             printf 'GH_FETCH_TOKEN=%q\nDB_PASSWORD_IN=%q\nAI_KEY_IN=%q\n' "$GH_FETCH_TOKEN" "$DB_PASSWORD_IN" "$AI_KEY_IN"
-            printf 'SHA=%q\nREPO_URL=%q\nAPP_DIR_IN=%q\nVENV_IN=%q\nBASE_VENV_IN=%q\nDOMAIN_IN=%q\nPORT_IN=%q\nDB_IN=%q\nDB_USER_IN=%q\nPW_NAME=%q\nUPDATE_DB_PASSWORD=%q\nSTAFF_DIR_IN=%q\nSKIP_MIGRATE=%q\n' \
-              "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD" "$STAFF_APP_DIR" "$SKIP_MIGRATE"
+            printf 'SHA=%q\nREPO_URL=%q\nAPP_DIR_IN=%q\nVENV_IN=%q\nBASE_VENV_IN=%q\nDOMAIN_IN=%q\nPORT_IN=%q\nDB_IN=%q\nDB_USER_IN=%q\nPW_NAME=%q\nUPDATE_DB_PASSWORD=%q\nSTAFF_DIR_IN=%q\nSKIP_MIGRATE=%q\nFAMILY_URL_IN=%q\n' \
+              "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD" "$STAFF_APP_DIR" "$SKIP_MIGRATE" "$FAMILY_URL"
             cat <<'REMOTE'
             set -euo pipefail
             # 公開のログにサーバーのホームのパス（SSH のユーザー名が入る）を出さない：出力の中のホームを ~ に置き換える
@@ -242,6 +244,8 @@ jobs:
               # あとから Secrets に入れた Anthropic のキーは、.env が空のときだけ入れる
               if [ -n "$AI_KEY_IN" ] && [ -z "$(getenv ANTHROPIC_API_KEY)" ]; then setenv ANTHROPIC_API_KEY "$AI_KEY_IN"; echo ".env に ANTHROPIC_API_KEY を入れました"; fi
             fi
+            # 保護者アプリのアドレス（あとから足した設定。.env に無いか空のときだけ入れる）
+            if [ -z "$(getenv FAMILY_APP_URL)" ]; then setenv FAMILY_APP_URL "$FAMILY_URL_IN"; echo ".env に FAMILY_APP_URL を入れました"; fi
 
             # 5) pip → migrate → collectstatic → Gunicorn の再起動 → サーバーの中からの healthz
             APP_DIR="$APP_DIR" VENV="$VENV" SKIP_MIGRATE="$SKIP_MIGRATE" bash deploy/venv-deploy.sh "$SHA"

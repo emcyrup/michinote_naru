@@ -119,7 +119,7 @@ def clean_days(values, window):
     return sorted(out)[:DATES_MAX]
 
 
-def apply_days(facility, child, days, *, via, line_user_id='', sender_name='', staff=None):
+def apply_days(facility, child, days, *, via, line_user_id='', sender_name='', staff=None, account=None):
     """
     利用日を申請する：その日の来所予定を作り、控え（UseRequest）を残す。
     休業日・すでに予定（欠席を含む）のある日は入れない。(入れた日, 入れなかった日) を返す。
@@ -139,7 +139,7 @@ def apply_days(facility, child, days, *, via, line_user_id='', sender_name='', s
             continue
         UseRequest.objects.create(
             facility=facility, beneficiary=child, date=d, via=via, line_user_id=line_user_id, sender_name=sender_name,
-            staff=staff, seen_at=timezone.now() if via == UseRequest.VIA_STAFF else None,
+            account=account, staff=staff, seen_at=timezone.now() if via == UseRequest.VIA_STAFF else None,
             seen_by=staff if via == UseRequest.VIA_STAFF else None)
         made.append(d)
     return made, skipped

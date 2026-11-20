@@ -155,6 +155,9 @@ SIGNUP_CODE = config('SIGNUP_CODE', default='')
 RESERVATION_ONLY = config('RESERVATION_ONLY', default=False, cast=bool)
 # 顧客向けページの URL をLINEの文面に載せるときの入口（例：https://yoyaku.example.jp）
 RESERVATION_SITE_URL = config('RESERVATION_SITE_URL', default='')
+# 保護者アプリ（別アプリ。メールアドレスとパスワードで入る）のアドレス（例：https://naru-family.example.jp）。
+# 職員が出す「パスワードを決めるリンク」の先頭に使う。空なら、リンクは出せない（アカウントの登録だけできる）
+FAMILY_APP_URL = config('FAMILY_APP_URL', default='')
 if RESERVATION_ONLY:
     ROOT_URLCONF = 'config.urls_reservation'
     LOGIN_REDIRECT_URL = '/reservations/'

@@ -362,6 +362,8 @@ body::before {
   padding: 0 36px;
   padding-top: 16px;
 }
+/* 長いリンク（保護者アプリのパスワード設定のリンクなど）が画面からはみ出さないように折る */
+.flash-messages .alert { overflow-wrap: anywhere; }
 
 /* =============================================
    ログイン画面（サイドバーなし） */

@@ -59,7 +59,7 @@ def branding(request):
                      'reservation': facility.use_reservation, 'form_set': facility.form_set,
                      'planbook': facility.is_planbook, 'therapy': facility.use_therapy_record,
                      'transport': facility.use_transport, 'shift': facility.use_shift, 'dev_assessment': facility.use_dev_assessment, 'survey': facility.use_survey, 'daily': facility.use_daily_ops, 'consultation': facility.use_consultation, 'reports': facility.use_reports,
-                     'home_icons': facility.home_icons, 'family_page': facility.use_family_page and facility.use_line,
+                     'home_icons': facility.home_icons, 'family_page': facility.use_family_page,
                      'ryoiku': facility.is_ryoiku, 'reservation_fixed': _reservation_fixed(facility)},
         'trial_ai': _trial_ai(facility),
         'planbook_unread': _planbook_unread(facility) if facility.is_planbook else 0,
@@ -99,7 +99,7 @@ def _pending_staff(user, facility):
 
 def _family_requests_unseen(facility):
     """保護者から届いた利用日申請のうち、まだ職員が確認していない子どもの人数"""
-    if not (facility.use_family_page and facility.use_line):
+    if not facility.use_family_page:
         return 0
     try:
         from family.yotei import unseen_count
@@ -110,7 +110,7 @@ def _family_requests_unseen(facility):
 
 def _family_unconfirmed(facility):
     """保護者からの連絡のうち、まだ職員が確認していない件数（保護者ページを使う事業所だけ数える）"""
-    if not (facility.use_family_page and facility.use_line):
+    if not facility.use_family_page:
         return 0
     try:
         from family.services import unconfirmed_count
