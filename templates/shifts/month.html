@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}勤務表（{{ year }}年{{ month }}月） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}勤務表（シフト）{% endblock %}
+{% block extra_css %}
+<style>
+  .sh-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 8px; margin-bottom: 10px; max-width: 520px; }
+  .sh-nav a.b { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; background: #f3f0ea; color: #333; font-size: 1.4rem; text-decoration: none; }
+  .sh-nav .ym { font-size: 1.2rem; font-weight: 700; text-align: center; }
+  .sh-nav .ym a { display: block; font-size: .78rem; font-weight: 400; }
+  .sh-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .sh-wrap { overflow-x: auto; background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; -webkit-overflow-scrolling: touch; }
+  table.sh { border-collapse: separate; border-spacing: 0; font-size: .85rem; }
+  table.sh th, table.sh td { border-right: 1px solid #eee9e0; border-bottom: 1px solid #eee9e0; text-align: center; padding: 0; white-space: nowrap; }
+  table.sh thead th { background: #f3f0ea; font-weight: 700; padding: 4px 0; min-width: 38px; position: sticky; top: 0; z-index: 2; }
+  table.sh thead th small { display: block; font-weight: 400; font-size: .7rem; }
+  table.sh th.is-sun, table.sh th.is-sun small { color: #c0392b; } table.sh th.is-sat, table.sh th.is-sat small { color: #2c63b0; }
+  table.sh th.is-closed { background: #f1e3e1; } table.sh th.is-today { box-shadow: 0 -3px 0 var(--color-primary, #4e7ea8) inset; }
+  table.sh .sh-name { position: sticky; left: 0; z-index: 3; background: #fff; text-align: left; padding: 6px 10px; min-width: 112px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; border-right: 2px solid #ddd6ca; }
+  table.sh thead .sh-name { background: #f3f0ea; z-index: 4; }
+  table.sh .sh-name small { display: block; color: #777; font-size: .7rem; font-weight: 400; }
+  table.sh .sh-sum { padding: 4px 8px; background: #faf8f4; font-variant-numeric: tabular-nums; }
+  table.sh td.sh-cell { min-width: 38px; height: 38px; }
+  table.sh td.sh-cell select { width: 100%; height: 38px; border: 0; background: transparent; text-align: center; text-align-last: center; font-size: .95rem; font-weight: 700; padding: 0; cursor: pointer; -webkit-appearance: none; appearance: none; color: #2f2a24; }
+  table.sh td.sh-cell select:focus { outline: 2px solid var(--color-primary, #4e7ea8); outline-offset: -2px; }
+  table.sh td.sh-cell span { display: flex; align-items: center; justify-content: center; height: 38px; font-weight: 700; }
+  table.sh tfoot td, table.sh tfoot th { background: #faf8f4; font-size: .78rem; color: #555; padding: 4px 0; }
+  .sh-legend { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; font-size: .82rem; }
+  .sh-legend span { border-radius: 999px; padding: 2px 10px; border: 1px solid #e0dacf; }
+  .sh-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .sh-save .btn-primary { flex: 1 1 200px; font-weight: 700; padding: 10px; max-width: 420px; }
+  @media (max-width: 900px) { .sh-save { padding-right: 76px; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="sh-nav" role="group" aria-label="月の切り替え">
+  <a class="b" href="?ym={{ prev_ym }}" aria-label="前の月"><i class="bi bi-chevron-left"></i></a>
+  <div class="ym">{{ year }}年{{ month }}月{% if not is_this_month %}<a href="?ym={{ this_ym }}">今月へ</a>{% endif %}</div>
+  <a class="b" href="?ym={{ next_ym }}" aria-label="次の月"><i class="bi bi-chevron-right"></i></a>
+</div>
+
+{% if needs_setup %}
+<div class="alert alert-info">
+  はじめに、<b>勤務の種類</b>（早番・日勤・休みなど）と、<b>勤務表に載せる人</b>を登録します。
+  {% if editable %}<a href="{% url 'shifts:setup' %}" class="btn btn-sm btn-primary ms-2">設定へ</a>{% else %}管理者か児発管が設定します。{% endif %}
+</div>
+{% endif %}
+
+{% if rows %}
+<form method="post" id="sh-form">
+  {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}">
+  <div class="sh-tools">
+    {% if editable %}
+    <button type="submit" name="action" value="apply" class="btn btn-outline-primary" id="sh-apply" {% if not has_weekly %}disabled title="設定の「曜日の基本」を先に入れてください"{% endif %}><i class="bi bi-magic"></i> 曜日の基本から入れる</button>
+    <label class="small d-flex align-items-center gap-1 mb-0"><input type="checkbox" name="overwrite" value="1"> 入っているマスも入れ直す</label>
+    {% endif %}
+    <a href="{% url 'shifts:print' %}?ym={{ ym }}" target="_blank" rel="noopener" class="btn btn-outline-secondary ms-auto"><i class="bi bi-printer"></i> 印刷</a>
+    {% if editable %}<a href="{% url 'shifts:setup' %}" class="btn btn-outline-secondary"><i class="bi bi-gear"></i> 設定</a>{% endif %}
+  </div>
+  <div class="sh-legend">
+    {% for p in patterns %}<span style="background:{{ p.color }};"><b>{{ p.mark }}</b> {{ p.name }}{% if p.time_label %} {{ p.time_label }}{% endif %}</span>{% endfor %}
+  </div>
+  <div class="sh-wrap">
+    <table class="sh">
+      <thead>
+        <tr>
+          <th class="sh-name">名前</th>
+          {% for d in days %}<th class="{% if d.is_sun %}is-sun{% elif d.is_sat %}is-sat{% endif %}{% if d.closed %} is-closed{% endif %}{% if d.is_today %} is-today{% endif %}" title="{{ d.holiday }}{% if d.closed %} 休業日{% endif %}">{{ d.day }}<small>{{ d.weekday }}</small></th>{% endfor %}
+          <th class="sh-sum">出勤</th><th class="sh-sum">時間</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <th class="sh-name" scope="row">{{ r.member.name }}{% if r.member.job %}<small>{{ r.member.job }}</small>{% endif %}</th>
+          {% for c in r.cells %}
+          <td class="sh-cell"{% if c.pattern %} style="background:{{ c.pattern.color }};"{% endif %}>
+            {% if editable %}
+            <select name="{{ c.name }}" aria-label="{{ r.member.name }} {{ c.day.day }}日">
+              <option value=""></option>
+              {% for p in patterns %}<option value="{{ p.pk }}" data-color="{{ p.color }}" title="{{ p.name }} {{ p.time_label }}"{% if c.pattern and c.pattern.pk == p.pk %} selected{% endif %}>{{ p.mark }}</option>{% endfor %}
+              {% if c.pattern and not c.pattern.is_active %}<option value="{{ c.pattern.pk }}" data-color="{{ c.pattern.color }}" selected>{{ c.pattern.mark }}</option>{% endif %}
+            </select>
+            {% else %}<span title="{{ c.pattern.name }} {{ c.pattern.time_label }}">{{ c.pattern.mark }}</span>{% endif %}
+          </td>
+          {% endfor %}
+          <td class="sh-sum">{{ r.work_days }} 日</td><td class="sh-sum">{{ r.hours }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><th class="sh-name">出勤の人数</th>{% for n in counts %}<td>{{ n|default:'' }}</td>{% endfor %}<td colspan="2"></td></tr>
+      </tfoot>
+    </table>
+  </div>
+  {% if editable %}
+  <div class="sh-save">
+    <button type="submit" name="action" value="save" class="btn btn-primary" id="sh-save">保存する</button>
+  </div>
+  <div class="small text-muted">マスを押して勤務の種類を選び、「保存する」を押します。出勤の日数・時間・人数は、保存すると数え直します。</div>
+  {% if has_entries %}<div class="text-end mt-2"><button type="submit" name="action" value="clear" class="btn btn-sm btn-outline-danger" onclick="return confirm('{{ year }}年{{ month }}月の勤務表を空にします。よろしいですか？');">この月を空にする</button></div>{% endif %}
+  {% endif %}
+</form>
+{% endif %}
+{% endblock %}
+{% block extra_js %}
+<script>
+// 選んだ勤務の色をマスに付ける
+(function () {
+  var form = document.getElementById('sh-form');
+  if (!form) return;
+  form.addEventListener('change', function (e) {
+    var s = e.target;
+    if (s.tagName !== 'SELECT') return;
+    var o = s.options[s.selectedIndex];
+    s.parentNode.style.background = (o && o.getAttribute('data-color')) || '';
+  });
+})();
+</script>
+{% endblock %}

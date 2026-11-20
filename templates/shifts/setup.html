@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}勤務表の設定 — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}勤務表の設定{% endblock %}
+{% block extra_css %}
+<style>
+  .ss-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; margin-bottom: 16px; max-width: 980px; }
+  .ss-card h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 4px; }
+  .ss-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px 0; border-top: 1px solid #eee9e0; }
+  .ss-row:first-of-type { border-top: 0; }
+  .ss-row input[type=text], .ss-row input[type=time], .ss-row input[type=number], .ss-row select { font-size: .95rem; padding: 6px 8px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; }
+  .ss-row .w-name { flex: 1 1 110px; min-width: 90px; max-width: 180px; } .ss-row .w-mark { width: 56px; text-align: center; font-weight: 700; }
+  .ss-row .w-num { width: 70px; } .ss-row .w-job { flex: 1 1 110px; min-width: 90px; max-width: 200px; }
+  .ss-row label { margin: 0; font-size: .85rem; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .ss-row label input[type=checkbox] { width: 20px; height: 20px; }
+  .ss-new { background: #fbfaf7; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+  .ss-wrap { overflow-x: auto; }
+  table.ss-week { border-collapse: collapse; font-size: .9rem; }
+  table.ss-week th, table.ss-week td { border: 1px solid #eee9e0; padding: 4px 6px; text-align: center; white-space: nowrap; }
+  table.ss-week th { background: #f3f0ea; }
+  table.ss-week td.n { text-align: left; font-weight: 700; }
+  table.ss-week select { font-size: .95rem; padding: 4px 6px; border: 1px solid #cfc8bb; border-radius: 8px; min-width: 64px; }
+  .sat { color: #2c63b0; } .sun { color: #c0392b; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="mb-2"><a href="{% url 'shifts:month' %}" class="small"><i class="bi bi-chevron-left"></i> 勤務表へ</a></div>
+
+<div class="ss-card" id="patterns">
+  <h2>1. 勤務の種類</h2>
+  <div class="small text-muted mb-2">勤務表のマスに入れるものです。「印」はマスに出る 1〜2 文字。休み・有休などは「休み」に印を付けます（出勤の日数・時間に数えません）。</div>
+  {% for p in patterns %}
+  <form method="post" class="ss-row">{% csrf_token %}<input type="hidden" name="pk" value="{{ p.pk }}"><input type="hidden" name="tab" value="patterns">
+    <input type="text" name="name" value="{{ p.name }}" maxlength="{{ name_max }}" class="w-name" aria-label="名前">
+    <input type="text" name="mark" value="{{ p.mark }}" maxlength="{{ mark_max }}" class="w-mark" aria-label="印" style="background:{{ p.color }};">
+    <input type="time" name="start_time" value="{{ p.start_time|time:'H:i' }}" aria-label="始まり"> 〜
+    <input type="time" name="end_time" value="{{ p.end_time|time:'H:i' }}" aria-label="終わり">
+    <label>休憩 <input type="number" name="break_minutes" value="{{ p.break_minutes }}" min="0" max="600" step="5" class="w-num"> 分</label>
+    <label><input type="checkbox" name="is_off"{% if p.is_off %} checked{% endif %}> 休み</label>
+    <select name="color" aria-label="色">{% for value, label in colors %}<option value="{{ value }}"{% if value == p.color %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <label><input type="checkbox" name="is_active"{% if p.is_active %} checked{% endif %}> 使う</label>
+    <button type="submit" name="action" value="pattern_save" class="btn btn-sm btn-primary">保存</button>
+    <button type="submit" name="action" value="pattern_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ p.name }}」を消します。よろしいですか？');">消す</button>
+  </form>
+  {% empty %}
+  <form method="post" class="my-2">{% csrf_token %}<input type="hidden" name="tab" value="patterns">
+    <button type="submit" name="action" value="defaults" class="btn btn-primary" id="ss-defaults"><i class="bi bi-magic"></i> よく使う勤務を入れる（早番・日勤・遅番・午前・午後・休み・有休）</button>
+    <div class="small text-muted mt-1">入れたあと、時間を事業所に合わせて直せます。</div>
+  </form>
+  {% endfor %}
+  <form method="post" class="ss-row ss-new">{% csrf_token %}<input type="hidden" name="tab" value="patterns">
+    <b class="small">足す：</b>
+    <input type="text" name="name" maxlength="{{ name_max }}" class="w-name" placeholder="名前（例：早番）" aria-label="名前">
+    <input type="text" name="mark" maxlength="{{ mark_max }}" class="w-mark" placeholder="印" aria-label="印">
+    <input type="time" name="start_time" aria-label="始まり"> 〜 <input type="time" name="end_time" aria-label="終わり">
+    <label>休憩 <input type="number" name="break_minutes" value="60" min="0" max="600" step="5" class="w-num"> 分</label>
+    <label><input type="checkbox" name="is_off"> 休み</label>
+    <select name="color" aria-label="色">{% for value, label in colors %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+    <button type="submit" name="action" value="pattern_add" class="btn btn-sm btn-outline-primary">足す</button>
+  </form>
+</div>
+
+<div class="ss-card" id="members">
+  <h2>2. 勤務表に載せる人</h2>
+  <div class="small text-muted mb-2">ログインしない人（パート・運転手など）も載せられます。並び順の数字が小さい人から上に出ます。</div>
+  {% for m in members %}
+  <form method="post" class="ss-row">{% csrf_token %}<input type="hidden" name="pk" value="{{ m.pk }}"><input type="hidden" name="tab" value="members">
+    <input type="text" name="name" value="{{ m.name }}" maxlength="{{ member_max }}" class="w-name" aria-label="名前">
+    <input type="text" name="job" value="{{ m.job }}" maxlength="30" class="w-job" placeholder="職種（例：児童指導員）" aria-label="職種">
+    <label>並び順 <input type="number" name="order" value="{{ m.order }}" min="0" max="999" class="w-num"></label>
+    <label><input type="checkbox" name="is_active"{% if m.is_active %} checked{% endif %}> 載せる</label>
+    <button type="submit" name="action" value="member_save" class="btn btn-sm btn-primary">保存</button>
+    <button type="submit" name="action" value="member_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ m.name }}」を消します。よろしいですか？');">消す</button>
+  </form>
+  {% endfor %}
+  <form method="post" class="ss-row ss-new">{% csrf_token %}<input type="hidden" name="tab" value="members">
+    <b class="small">足す：</b>
+    <input type="text" name="name" maxlength="{{ member_max }}" class="w-name" placeholder="名前" aria-label="名前">
+    <input type="text" name="job" maxlength="30" class="w-job" placeholder="職種（例：児童指導員）" aria-label="職種">
+    <button type="submit" name="action" value="member_add" class="btn btn-sm btn-outline-primary">足す</button>
+    <button type="submit" name="action" value="import_staff" class="btn btn-sm btn-outline-secondary ms-auto" id="ss-import" formnovalidate><i class="bi bi-people"></i> ログインする職員から足す</button>
+  </form>
+</div>
+
+<div class="ss-card" id="weekly">
+  <h2>3. 曜日の基本</h2>
+  <div class="small text-muted mb-2">人ごとに、曜日のいつもの勤務を決めます。月の勤務表の「曜日の基本から入れる」で、その月にまとめて入ります（入れたあと、日ごとに直せます）。</div>
+  {% if weekly and active_patterns %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="tab" value="weekly">
+    <div class="ss-wrap">
+      <table class="ss-week">
+        <thead><tr><th>名前</th>{% for c in weekly.0.cells %}<th class="{% if c.weekday == 5 %}sat{% elif c.weekday == 6 %}sun{% endif %}">{{ c.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in weekly %}
+          <tr><td class="n">{{ r.member.name }}</td>
+            {% for c in r.cells %}<td><select name="{{ c.name }}" aria-label="{{ r.member.name }} {{ c.label }}曜">
+              <option value="">—</option>
+              {% for p in active_patterns %}<option value="{{ p.pk }}"{% if c.pattern_id == p.pk %} selected{% endif %}>{{ p.mark }} {{ p.name }}</option>{% endfor %}
+            </select></td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" name="action" value="weekly_save" class="btn btn-primary mt-2" id="ss-weekly-save">曜日の基本を保存する</button>
+  </form>
+  {% else %}
+  <div class="text-muted">先に、勤務の種類と、勤務表に載せる人を登録してください。</div>
+  {% endif %}
+</div>
+{% endblock %}
