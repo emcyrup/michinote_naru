@@ -58,7 +58,7 @@ def branding(request):
         'features': {'billing': facility.use_billing, 'schedule': facility.use_schedule, 'line': facility.use_line,
                      'reservation': facility.use_reservation, 'form_set': facility.form_set,
                      'planbook': facility.is_planbook, 'therapy': facility.use_therapy_record,
-                     'transport': facility.use_transport, 'dev_assessment': facility.use_dev_assessment, 'survey': facility.use_survey, 'daily': facility.use_daily_ops, 'consultation': facility.use_consultation, 'reports': facility.use_reports,
+                     'transport': facility.use_transport, 'shift': facility.use_shift, 'dev_assessment': facility.use_dev_assessment, 'survey': facility.use_survey, 'daily': facility.use_daily_ops, 'consultation': facility.use_consultation, 'reports': facility.use_reports,
                      'home_icons': facility.home_icons, 'family_page': facility.use_family_page and facility.use_line,
                      'ryoiku': facility.is_ryoiku, 'reservation_fixed': _reservation_fixed(facility)},
         'trial_ai': _trial_ai(facility),

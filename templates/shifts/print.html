@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>勤務表 {{ year }}年{{ month }}月 — {{ facility.name }}</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  body { font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Noto Sans JP', sans-serif; font-size: 10px; color: #111; margin: 12px; }
+  h1 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: #555; margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th, td { border: 1px solid #555; text-align: center; padding: 2px 0; height: 20px; overflow: hidden; }
+  th.name, td.name { width: 92px; text-align: left; padding-left: 4px; white-space: nowrap; }
+  td.name small { color: #555; font-size: 8px; display: block; }
+  th.sum, td.sum { width: 34px; }
+  th small { display: block; font-weight: 400; font-size: 8px; }
+  .sun { color: #b0271c; } .sat { color: #1f4f96; }
+  th.closed { background: #eee; }
+  td.c { font-weight: 700; font-size: 11px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tfoot td, tfoot th { font-size: 9px; }
+  .legend { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .legend span { border: 1px solid #999; padding: 1px 6px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .toolbar { margin-bottom: 10px; }
+  .toolbar button, .toolbar a { font-size: 14px; padding: 6px 14px; margin-right: 8px; }
+  @media print { .toolbar { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar"><button type="button" onclick="window.print()">印刷する</button><a href="{% url 'shifts:month' %}?ym={{ ym }}">勤務表へもどる</a></div>
+<h1>勤務表　{{ year }}年{{ month }}月</h1>
+<div class="sub">{{ facility.name }}</div>
+<table>
+  <thead>
+    <tr><th class="name">名前</th>{% for d in days %}<th class="{% if d.is_sun %}sun{% elif d.is_sat %}sat{% endif %}{% if d.closed %} closed{% endif %}">{{ d.day }}<small>{{ d.weekday }}</small></th>{% endfor %}<th class="sum">出勤</th><th class="sum">時間</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr><td class="name">{{ r.member.name }}{% if r.member.job %}<small>{{ r.member.job }}</small>{% endif %}</td>
+      {% for c in r.cells %}<td class="c"{% if c.pattern %} style="background:{{ c.pattern.color }};"{% endif %}>{{ c.pattern.mark }}</td>{% endfor %}
+      <td class="sum">{{ r.work_days }}</td><td class="sum">{{ r.hours }}</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr><th class="name">出勤の人数</th>{% for n in counts %}<td>{{ n|default:'' }}</td>{% endfor %}<td colspan="2"></td></tr></tfoot>
+</table>
+<div class="legend">{% for p in all_patterns %}<span style="background:{{ p.color }};"><b>{{ p.mark }}</b> {{ p.name }}{% if p.time_label %}（{{ p.time_label }}{% if p.break_minutes %}・休憩 {{ p.break_minutes }} 分{% endif %}）{% endif %}</span>{% endfor %}</div>
+</body>
+</html>

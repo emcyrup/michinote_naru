@@ -198,6 +198,13 @@
         </a>
       </li>
       {% endif %}
+      {% if features.shift %}
+      <li>
+        <a class="sidebar-nav-item {% if rm.app_name == 'shifts' %}active{% endif %}" href="{% url 'shifts:month' %}" title="月の勤務表（シフト）を作って印刷します">
+          <i class="bi bi-calendar2-week"></i><span>勤務表（シフト）</span>
+        </a>
+      </li>
+      {% endif %}
       {% if features.daily %}
       <li>
         <a class="sidebar-nav-item {% if rm.app_name == 'daily' and rm.url_name|slice:':6' != 'health' %}active{% endif %}" href="{% url 'daily:groups' %}" title="クラス（小集団）の週間の活動計画と、当日の記録">
@@ -343,6 +350,14 @@
           <span>支援計画</span>
         </a>
       </li>
+      {% if features.shift %}
+      <li>
+        <a class="sidebar-nav-item {% if request.resolver_match.app_name == 'shifts' %}active{% endif %}" href="{% url 'shifts:month' %}" title="月の勤務表（シフト）を作って印刷します">
+          <i class="bi bi-calendar2-week"></i>
+          <span>勤務表（シフト）</span>
+        </a>
+      </li>
+      {% endif %}
       {% if features.home_icons or features.family_page %}
       <li>
         <a class="sidebar-nav-item {% block nav_family_calendar %}{% endblock %}" href="{% url 'family:staff_calendar' %}">
