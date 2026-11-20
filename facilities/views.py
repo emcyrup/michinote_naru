@@ -540,8 +540,8 @@ STAFF_HOME_ICONS = [
     {'key': 'from_family', 'label': '保護者からの\n連絡', 'icon': 'bi-telephone', 'url': 'family:staff_inbox', 'needs': 'family_page'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'schedules:jisseki'},
     {'key': 'yotei', 'label': '予定', 'icon': 'bi-calendar3', 'url': 'family:staff_calendar'},
-    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': None},
-    {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'support_plans:list'},
+    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': 'family:staff_notice', 'needs': 'family_page'},
+    {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'support_plans:renewal'},
 ]
 
 

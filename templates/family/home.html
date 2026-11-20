@@ -14,7 +14,7 @@
   {% for it in icons %}
   <a href="{{ it.href }}">
     {% if it.soon %}<span class="fm-soon">準備中</span>{% endif %}
-    {% if it.badge %}<span class="fm-badge" aria-label="まだ読んでいない連絡帳 {{ it.badge }} 件">{{ it.badge }}</span>{% endif %}
+    {% if it.badge %}<span class="fm-badge" aria-label="まだ読んでいないもの {{ it.badge }} 件">{{ it.badge }}</span>{% endif %}
     <span class="fm-icon">{% if it.icon %}<i class="bi {{ it.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ it.text }}</span>{% endif %}</span>
     <span class="fm-label">{{ it.label }}</span>
   </a>

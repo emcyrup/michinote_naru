@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}{{ notice.title }} — お知らせ{% endblock %}
+{% block page_title %}お知らせ{% endblock %}
+{% block nav_family_notice %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .ns-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 16px; }
+  .ns-title { font-size: 1.2rem; font-weight: 700; overflow-wrap: anywhere; }
+  .ns-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; margin-top: 10px; }
+  .ns-kids { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ns-kids span { background: #f3f0ea; border-radius: 999px; padding: 3px 10px; font-size: .9rem; }
+  .ns-kids span.is-read { background: #e3f3e6; color: #1e6b33; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_notice' %}" class="small"><i class="bi bi-chevron-left"></i> お知らせの一覧へ</a></div>
+  <div class="ns-card">
+    <div class="ns-title">{{ notice.title }}</div>
+    <div class="small text-muted mt-1">{{ notice.sent_at|date:'Y年n月j日（D）H:i' }} 送信{% if notice.sent_by %}（{{ notice.sent_by }}）{% endif %}　配信先：{{ notice.target_label }}{% if notice.line_count %}　LINE で知らせた {{ notice.line_count }} 人{% endif %}</div>
+    <div class="ns-body">{{ notice.body|urlize }}</div>
+  </div>
+
+  <div class="ns-card mt-3">
+    <div class="fw-bold mb-2">宛先（{{ rows|length }} 人）　読んだ {{ n_read }} 人</div>
+    <div class="ns-kids">
+      {% for r in rows %}<span class="{% if r.read_at %}is-read{% endif %}">{% if r.read_at %}<i class="bi bi-check2"></i> {% endif %}{{ r.beneficiary.full_name }}</span>{% endfor %}
+    </div>
+    <div class="small text-muted mt-2">緑＝保護者がお知らせの画面を開いた子。</div>
+  </div>
+
+  <form method="post" class="text-end mt-3">{% csrf_token %}
+    <button type="submit" name="action" value="delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('このお知らせを取り下げます。保護者ページからも消えます。よろしいですか？');">このお知らせを取り下げる</button>
+  </form>
+</div>
+{% endblock %}

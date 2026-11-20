@@ -18,7 +18,8 @@ from beneficiaries.models import Guardian
 from line_integration.sending import push_text
 
 from . import services
-from .models import ContactBook, DayEvent, FamilyAccess, FamilyMessage, ParentNote, UseRequest
+from .models import (ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, ParentNote,
+                     UseRequest)
 
 # 入場の印の有効期間（これを過ぎたら、LINE のリンクから入り直す）
 SESSION_DAYS = 30
@@ -31,8 +32,8 @@ FAMILY_ICONS = [
     {'key': 'message', 'label': 'その他の連絡', 'icon': 'bi-telephone', 'url': 'family:message'},
     {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check'},
     {'key': 'request', 'label': '利用日申請', 'icon': 'bi-calendar3', 'url': 'family:calendar'},
-    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope'},
-    {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text'},
+    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': 'family:notice'},
+    {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'family:plan'},
 ]
 
 
@@ -76,6 +77,14 @@ class EnterView(View):
             except ValueError:
                 day = ''
             return _no_store(redirect(reverse('family:book_from') + (f'?date={day}' if day else '')))
+        if request.GET.get('to') == 'notice':
+            try:
+                child_pk = int(request.GET.get('c', ''))
+            except ValueError:
+                child_pk = None
+            if child_pk in {g.beneficiary_id for g in services.guardians_of(access.facility, access.line_user_id)}:
+                request.session['family_child'] = child_pk
+            return _no_store(redirect('family:notice'))
         return _no_store(redirect('family:home'))
 
 
@@ -123,8 +132,10 @@ class HomeView(FamilyMixin, View):
     def get(self, request):
         icons = _icons(self.facility)
         unread = services.unread_books(self.facility, self.child).count()
+        from . import notices
+        news = notices.unread_count(self.facility, self.child)
         for it in icons:
-            it['badge'] = unread if it['key'] == 'from_facility' else 0
+            it['badge'] = unread if it['key'] == 'from_facility' else news if it['key'] == 'oshirase' else 0
         return render(request, 'family/home.html', {**self.base_context(), 'icons': icons})
 
 
@@ -630,3 +641,201 @@ class StaffApplyView(StaffCalendarMixin, View):
         if skipped:
             messages.warning(request, f'{len(skipped)} 日ぶんは入れていません（休業日か、すでに予定のある日）。')
         return redirect(back)
+
+
+# =============================================
+# お知らせ（family/notices.py）
+# =============================================
+class NoticeListView(FamilyMixin, View):
+    """保護者ページ「お知らせ」：新しいものが上、古いものが下にたまっていく。画面が出たら「読んだ」と記録する"""
+    PAGE = 30
+
+    def get(self, request):
+        from . import notices
+        rows = notices.feed(self.facility, self.child)
+        show_all = request.GET.get('all') == '1'
+        total = rows.count()
+        items = list(rows if show_all else rows[:self.PAGE])
+        return render(request, 'family/notice_list.html', {
+            **self.base_context(), 'items': items, 'unread': sum(1 for r in items if r.read_at is None),
+            'more': total - len(items),
+        })
+
+    def post(self, request):
+        from django.http import JsonResponse
+        from . import notices
+        guardian = next(g for g in self.guardians if g.beneficiary_id == self.child.pk)
+        n = notices.mark_read(self.facility, self.child, guardian)
+        if request.headers.get('X-Requested-With') == 'fetch':
+            return JsonResponse({'ok': True, 'read': n})
+        return redirect('family:notice')
+
+
+class PlanView(FamilyMixin, View):
+    """保護者ページ「個別支援計画」：本案（担当者会議を終えた計画）を読む"""
+
+    def get(self, request):
+        from support_plans import sheet
+        from support_plans.models import SupportPlan
+        plans = (SupportPlan.objects.filter(facility=self.facility, beneficiary=self.child,
+                                            current_step__gte=SupportPlan.STEP_CONSENT)
+                 .exclude(status=SupportPlan.STATUS_CLOSED).select_related('manager').order_by('-created_at')[:2])
+        cards = []
+        for plan in plans:
+            draft = plan.get_step(SupportPlan.STEP_DRAFT)
+            values = sheet.plan_values(plan, draft)
+            labels = [(k, label) for k, label, _w, _h in sheet.plan_cells(self.facility)] + \
+                     [(k, sheet.label_of(k, self.facility)) for k in sheet.extra_in_sheet(self.facility)]
+            cells = [{'label': label, 'value': (values.get(k) or '').strip()} for k, label in labels]
+            goal_cells = sheet.goal_cells(self.facility)
+            goals = []
+            for row in sheet.goal_rows(plan):
+                g = row['goal']
+                if g is None:
+                    continue
+                parts = [{'key': k, 'label': label.replace('（文章）', ''), 'value': (row['values'].get(k) or '').strip()}
+                         for k, label, _w, _h in goal_cells if k != 'content']
+                parts = [p for p in parts if p['value']]
+                # 達成時期は、文で書いてあればそれを、無ければ日付を出す（両方は出さない）
+                goals.append({'goal': g, 'kind': g.get_goal_type_display(), 'parts': parts,
+                              'show_date': bool(g.target_date) and not any(p['key'] == 'timing' for p in parts)})
+            cards.append({'plan': plan, 'draft': draft, 'cells': [c for c in cells if c['value']], 'goals': goals,
+                          'agreed': plan.current_step > SupportPlan.STEP_CONSENT})
+        return render(request, 'family/plan.html', {**self.base_context(), 'cards': cards})
+
+
+class StaffNoticeMixin(LoginRequiredMixin):
+    """職員の「お知らせ」：保護者ページを使う事業所だけ"""
+
+    def dispatch(self, request, *args, **kwargs):
+        if request.user.is_authenticated:
+            facility = getattr(request.user, 'facility', None)
+            if facility is None or not facility.use_family_page:
+                raise Http404
+            self.facility = facility
+        return super().dispatch(request, *args, **kwargs)
+
+
+class StaffNoticeListView(StaffNoticeMixin, View):
+    """お知らせ：これまでのお知らせの一覧（下書きは上）。「新規作成」から書く"""
+
+    def get(self, request):
+        from . import notices
+        drafts, sent = notices.staff_list(self.facility)
+        return render(request, 'family/staff_notice_list.html', {'drafts': drafts, 'sent': sent})
+
+
+class StaffNoticeEditView(StaffNoticeMixin, View):
+    """お知らせを書く：タイトル・配信先（全員／グループ／児童個別）・本文 → 下書き保存／送信。送信済みは読むだけ"""
+
+    def notice_of(self, pk):
+        return get_object_or_404(Notice, pk=pk, facility=self.facility) if pk else None
+
+    def form_context(self, notice, values=None, problems=None):
+        from . import notices
+        if values is None:
+            values = {'title': notice.title, 'body': notice.body, 'target_kind': notice.target_kind, 'group': notice.group,
+                      'children': list(notice.children.all())} if notice else \
+                     {'title': '', 'body': '', 'target_kind': Notice.TARGET_ALL, 'group': None, 'children': []}
+        children = list(notices.active_children(self.facility))
+        return {'notice': notice, 'v': values, 'picked': {c.pk for c in values['children']}, 'problems': problems or [],
+                'children': children, 'groups': NoticeGroup.objects.filter(facility=self.facility).prefetch_related('members'),
+                'title_max': Notice.TITLE_MAX, 'body_max': Notice.BODY_MAX, 'all_count': len(children),
+                'line_on': self.facility.use_line}
+
+    def get(self, request, pk=None):
+        notice = self.notice_of(pk)
+        if notice and notice.is_sent:
+            rows = list(notice.recipients.select_related('beneficiary')
+                        .order_by('beneficiary__last_name_kana', 'beneficiary__first_name_kana'))
+            return render(request, 'family/staff_notice_sent.html', {
+                'notice': notice, 'rows': rows, 'n_read': sum(1 for r in rows if r.read_at)})
+        return render(request, 'family/staff_notice_edit.html', self.form_context(notice))
+
+    def post(self, request, pk=None):
+        from . import notices
+        notice = self.notice_of(pk)
+        action = request.POST.get('action')
+        if action == 'delete':
+            if notice:
+                was_sent = notice.is_sent
+                notice.delete()
+                messages.success(request, 'お知らせを取り下げました（保護者ページからも消えます）。' if was_sent else '下書きを消しました。')
+            return redirect('family:staff_notice')
+        if notice and notice.is_sent:
+            messages.info(request, '送信済みのお知らせは書き換えられません。直すときは、取り下げてから書き直してください。')
+            return redirect('family:staff_notice_edit', pk=notice.pk)
+        values, problems = notices.clean(self.facility, request.POST)
+        if action != 'send':
+            if not (values['title'] or values['body']):
+                return render(request, 'family/staff_notice_edit.html',
+                              self.form_context(notice, values, ['タイトルか本文を書いてから保存してください。']), status=400)
+            notices.save_draft(self.facility, request.user, values, notice)
+            messages.success(request, '下書きを保存しました（保護者にはまだ見えません）。')
+            return redirect('family:staff_notice')
+        if problems:
+            return render(request, 'family/staff_notice_edit.html', self.form_context(notice, values, problems), status=400)
+        notice = notices.save_draft(self.facility, request.user, values, notice)
+        n = notices.send(notice, request.user)
+        if not n:
+            return render(request, 'family/staff_notice_edit.html',
+                          self.form_context(notice, values, ['配信先に、在籍中の子がいません。配信先を確かめてください。']), status=400)
+        text = f'お知らせ「{notice.title}」を {n} 人ぶん送信しました。'
+        if request.POST.get('notify_line') == '1' and self.facility.use_line:
+            sent, errors = notices.notify(notice, request.build_absolute_uri('/'))
+            if sent:
+                text += f'保護者の LINE に知らせました（{sent} 人）。'
+            elif errors:
+                text += f'LINE での知らせは送れませんでした（{errors[0]}）。保護者ページには出ています。'
+            else:
+                text += '公式 LINE につながっている保護者がいないので、LINE での知らせは送っていません。'
+        messages.success(request, text)
+        return redirect('family:staff_notice')
+
+
+class StaffNoticeGroupView(StaffNoticeMixin, View):
+    """お知らせの配信先のグループ：作る・直す・消す"""
+
+    def context(self, group=None, problem='', name=None, picked=None):
+        from . import notices
+        return {'groups': NoticeGroup.objects.filter(facility=self.facility).prefetch_related('members'), 'group': group,
+                'children': notices.active_children(self.facility), 'problem': problem, 'name_max': NoticeGroup.NAME_MAX,
+                'name': name if name is not None else (group.name if group else ''),
+                'picked': picked if picked is not None else ({b.pk for b in group.members.all()} if group else set())}
+
+    def group_of(self, pk):
+        return get_object_or_404(NoticeGroup, pk=pk, facility=self.facility) if pk else None
+
+    def get(self, request, pk=None):
+        return render(request, 'family/staff_notice_groups.html', self.context(self.group_of(pk)))
+
+    def post(self, request, pk=None):
+        from . import notices
+        group = self.group_of(pk)
+        if request.POST.get('action') == 'delete':
+            if group:
+                name = group.name
+                group.delete()
+                messages.success(request, f'グループ「{name}」を消しました（送信済みのお知らせはそのままです）。')
+            return redirect('family:staff_notice_groups')
+        name = (request.POST.get('name') or '').strip()[:NoticeGroup.NAME_MAX]
+        ids = [int(v) for v in request.POST.getlist('members') if str(v).isdigit()]
+        members = list(notices.active_children(self.facility).filter(pk__in=ids))
+        problem = ''
+        if not name:
+            problem = 'グループの名前を書いてください。'
+        elif NoticeGroup.objects.filter(facility=self.facility, name=name).exclude(pk=group.pk if group else None).exists():
+            problem = '同じ名前のグループがあります。'
+        elif not members:
+            problem = 'グループに入れる子を選んでください。'
+        if problem:
+            return render(request, 'family/staff_notice_groups.html',
+                          self.context(group, problem, name, {b.pk for b in members}), status=400)
+        if group is None:
+            group = NoticeGroup.objects.create(facility=self.facility, name=name)
+        else:
+            group.name = name
+            group.save(update_fields=['name'])
+        group.members.set(members)
+        messages.success(request, f'グループ「{name}」を保存しました（{len(members)} 人）。')
+        return redirect('family:staff_notice_groups')

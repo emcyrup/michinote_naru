@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}個別支援計画 — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}個別支援計画{% endblock %}
+{% block nav_plans %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .rn-sum { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .rn-chip { background: #fff; border: 1px solid #e6e1d8; border-radius: 999px; padding: 4px 12px; font-size: .9rem; }
+  .rn-chip b { font-size: 1.05rem; }
+  .rn-chip.is-red { color: #c0392b; border-color: #e7b5af; } .rn-chip.is-orange { color: #c26a00; border-color: #ecc894; }
+  .rn-row { flex-wrap: wrap; row-gap: 4px; position: relative; padding-right: 38px; }
+  .rn-row > .bi-chevron-right { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+  .rn-row .dayitem-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rn-row.is-red .dayitem-name { color: #c0392b; }
+  .rn-row.is-orange .dayitem-name { color: #c26a00; }
+  .rn-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: .8rem; color: #666; white-space: nowrap; }
+  .rn-mark { font-weight: 700; padding: 1px 9px; border-radius: 999px; background: #f1eee8; color: #555; }
+  .rn-row.is-red .rn-mark { background: #fbe3e0; color: #c0392b; }
+  .rn-row.is-orange .rn-mark { background: #fdeccd; color: #a85a00; }
+  .rn-legend { font-size: .82rem; color: #666; margin: 0 2px 10px; }
+  .rn-legend b.r { color: #c0392b; } .rn-legend b.o { color: #c26a00; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="rn-sum">
+    <span class="rn-chip is-red">今月更新・期限切れ <b>{{ counts.red }}</b> 人</span>
+    <span class="rn-chip is-orange">来月更新 <b>{{ counts.orange }}</b> 人</span>
+    {% if counts.none %}<span class="rn-chip">計画なし <b>{{ counts.none }}</b> 人</span>{% endif %}
+  </div>
+  <div class="rn-legend">名前の色：<b class="r">赤</b>＝今月が更新月（計画期間の終わり） <b class="o">オレンジ</b>＝来月が更新月 黒＝そのほか。名前を押すと、計画の作成の流れが開きます。</div>
+
+  {% if rows %}
+  <ul class="daylist">
+    {% for r in rows %}
+    <li>
+      <a class="dayitem rn-row{% if r.color == 'red' %} is-red{% elif r.color == 'orange' %} is-orange{% endif %}"
+         href="{% if r.plan %}{% url 'support_plans:detail' r.plan.pk %}{% else %}{% url 'support_plans:create' %}?beneficiary={{ r.beneficiary.pk }}{% endif %}">
+        <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
+        <span class="rn-side">
+          {% if r.label %}<span class="rn-mark">{{ r.label }}</span>{% endif %}
+          {% if r.period_end %}<span>〜{{ r.period_end|date:'Y年n月j日' }}</span>{% endif %}
+          {% if r.working and r.active %}<span>次の計画を作成中（{{ r.working_step }}）</span>{% elif r.working %}<span>{{ r.working_step }}</span>{% endif %}
+        </span>
+        <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="day-empty">在籍中の{{ terms.beneficiary|default:'利用者' }}がいません。</div>
+  {% endif %}
+
+  <div class="text-center mt-3 small">
+    <a href="{% url 'support_plans:list' %}">計画の一覧（進み具合・モニタリングの期限）へ</a>
+    {% if features.home_icons %}<span class="mx-2 text-muted">|</span><a href="{% url 'facilities:home_icons' %}"><i class="bi bi-chevron-left"></i> ホームへ</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -30,7 +30,10 @@ UNIQUE_BY = {
     'billingmatrixentry': (('date',), '請求の実績'),
     'billingrecord': (('year_month',), '請求'),
     'copaymentmanagement': (('year_month',), '上限額管理'),
+    'contact_books': (('date',), '連絡帳'),
 }
+# 同じものが両方にあれば、消すほうのぶんを捨てるもの：{関連の名前: 同じかどうかを見る欄}（例：同じお知らせが 2 人に届いている）
+DROP_DUPLICATES = {'notices_received': 'notice_id'}
 ONE_TO_ONE = {'therapy_profile': '療育記録の留意点', 'transport': '送迎の設定', 'health_profile': '健康の基本情報'}
 
 
@@ -170,6 +173,10 @@ def merge(keep, drop):
                 mine.cautions = (mine.cautions.rstrip() + '\n' if mine.cautions.strip() else '') + theirs.cautions.strip()
                 mine.save()
             continue
+        if name in DROP_DUPLICATES:
+            key = DROP_DUPLICATES[name]
+            mine = model._default_manager.filter(**{field: keep}).values_list(key, flat=True)
+            model._default_manager.filter(**{field: drop, f'{key}__in': list(mine)}).delete()
         model._default_manager.filter(**{field: drop}).update(**{field: keep})
     for name in ('siblings', 'cannot_pair', 'no_ride_with'):
         others = [b for b in getattr(drop, name).all() if b.pk != keep.pk]

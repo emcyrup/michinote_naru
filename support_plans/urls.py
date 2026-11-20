@@ -6,6 +6,7 @@ app_name = 'support_plans'
 
 urlpatterns = [
     path('', views.PlanListView.as_view(), name='list'),
+    path('renewal/', views.PlanRenewalView.as_view(), name='renewal'),
     path('new/', views.PlanCreateView.as_view(), name='create'),
     path('<int:pk>/', views.PlanDetailView.as_view(), name='detail'),
     path('<int:pk>/print/', views.PlanPrintView.as_view(), name='print'),

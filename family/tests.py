@@ -20,7 +20,8 @@ from records.models import DailyRecord
 from schedules.models import ScheduledVisit
 
 from . import services
-from .models import ContactBook, DayEvent, FamilyAccess, FamilyMessage, ParentNote, UseRequest
+from .models import (ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, NoticeRecipient,
+                     ParentNote, UseRequest)
 
 
 def _body(text, user_id='U1'):
@@ -85,12 +86,12 @@ class EnterTests(Base):
             self.assertIn(label, html)
         self.assertEqual(html.count('class="fm-icon"'), 8)
         self.assertIn('grid-template-columns: repeat(3', html)
-        page = self.client.get(reverse('family:page', args=['oshirase']))
+        page = self.client.get(reverse('family:page', args=['jisseki']))
         self.assertContains(page, '準備中')
         # できた画面（欠席連絡・その他の連絡）は「準備中」を出さず、その画面へ
         self.assertRedirects(self.client.get(reverse('family:page', args=['absence'])), reverse('family:absence'))
         self.assertIn(f'href="{reverse("family:absence")}"', html)
-        self.assertEqual(html.count('class="fm-soon"'), 3)        # 連絡帳 2 つ・欠席連絡・その他の連絡・利用日申請はできている
+        self.assertEqual(html.count('class="fm-soon"'), 1)        # 残りは 実績記録票（保護者サイン）だけ
         self.assertEqual(self.client.get(reverse('family:page', args=['nope'])).status_code, 404)
 
     def test_without_link_is_closed(self):
@@ -669,7 +670,7 @@ class BookTests(Base):
     def test_staff_home_icon_opens_book(self):
         html = self.sc.get(reverse('facilities:home_icons')).content.decode()
         self.assertIn(f'href="{reverse("family:staff_book")}"', html)
-        self.assertEqual(html.count('class="ih-soon"'), 1)                              # 残りは お知らせ だけ
+        self.assertEqual(html.count('class="ih-soon"'), 0)                              # 職員のアイコンは全部できている
 
 
 class CalendarTests(Base):
@@ -828,3 +829,273 @@ class CalendarTests(Base):
         self.assertEqual(self.client_class().get(self.scal).status_code, 302)                   # ログインが要る
         self.assertEqual(self.client_class().get(self.cal).status_code, 403)                    # 入場の印が要る
         self.assertEqual(self.client_class().post(self.cal, {'dates': [self.d1.isoformat()]}).status_code, 403)
+
+
+class NoticeTests(Base):
+    """お知らせ：職員が書く（全員／グループ／児童個別・下書き・送信）→ 保護者ページに新しい順で出る"""
+
+    def setUp(self):
+        super().setUp()
+        from . import notices
+        self.notices = notices
+        self.enter()
+        self.client.post(reverse('family:child'), {'child': self.taro.pk})
+        self.sc = self.client_class()
+        self.sc.force_login(self.staff)
+        self.new = reverse('family:staff_notice_new')
+        self.feed = reverse('family:notice')
+
+    def post(self, data, url=None, push_ok=True):
+        with mock.patch('line_integration.sending.push_text', return_value=(push_ok, '' if push_ok else 'LINE のエラー')) as push:
+            res = self.sc.post(url or self.new, data, follow=True)
+        return res, push
+
+    def test_send_to_all_and_parent_reads(self):
+        res, push = self.post({'title': '12 月の行事について', 'body': 'クリスマス会をします。\n詳しくは予定をご覧ください。',
+                               'target_kind': 'all', 'action': 'send', 'notify_line': '1'})
+        self.assertContains(res, 'お知らせ「12 月の行事について」を 3 人ぶん送信しました。')
+        self.assertContains(res, '保護者の LINE に知らせました（1 人）')          # LINE は U1 だけ。きょうだいでも 1 通
+        self.assertEqual(push.call_count, 1)
+        text = push.call_args[0][2]
+        self.assertIn('12 月の行事について', text)
+        self.assertNotIn('クリスマス会', text)                                    # 本文は LINE に流さない
+        self.assertIn('?to=notice&c=', text)
+        n = Notice.objects.get()
+        self.assertEqual((n.status, n.target_label, n.line_count, n.recipients.count()), ('sent', '全員', 1, 3))
+        # 保護者：ホームに数字 → 開くと出る → 読んだ記録
+        self.assertIn('class="fm-badge"', self.client.get(reverse('family:home')).content.decode())
+        html = self.client.get(self.feed).content.decode()
+        self.assertIn('12 月の行事について', html)
+        self.assertIn('クリスマス会をします。', html)
+        self.assertIn('新着', html)
+        res = self.client.post(self.feed, HTTP_X_REQUESTED_WITH='fetch')
+        self.assertEqual(res.json(), {'ok': True, 'read': 1})
+        self.assertNotIn('新着', self.client.get(self.feed).content.decode())
+        self.assertNotIn('class="fm-badge"', self.client.get(reverse('family:home')).content.decode())
+        # 職員：読んだ人数
+        self.assertContains(self.sc.get(reverse('family:staff_notice')), '読んだ 1 / 3 人')
+        self.assertContains(self.sc.get(reverse('family:staff_notice_edit', args=[n.pk])), '読んだ 1 人')
+
+    def test_line_link_opens_notice_page(self):
+        access = services.access_for(self.f, 'U1')
+        c = self.client_class()
+        res = c.get(reverse('family:enter', args=[access.token]) + f'?to=notice&c={self.hana.pk}')
+        self.assertRedirects(res, self.feed, fetch_redirect_response=False)
+        self.assertEqual(c.session['family_child'], self.hana.pk)
+
+    def test_newest_first(self):
+        for title in ('1 つめ', '2 つめ', '3 つめ'):
+            self.post({'title': title, 'body': '本文', 'target_kind': 'all', 'action': 'send'})
+        html = self.client.get(self.feed).content.decode()
+        self.assertLess(html.index('3 つめ'), html.index('2 つめ'))
+        self.assertLess(html.index('2 つめ'), html.index('1 つめ'))
+
+    def test_draft_is_hidden_then_sent(self):
+        res, push = self.post({'title': '下書きの題', 'body': '', 'target_kind': 'all', 'action': 'draft'})
+        self.assertContains(res, '下書きを保存しました')
+        push.assert_not_called()
+        n = Notice.objects.get()
+        self.assertEqual((n.status, n.recipients.count()), ('draft', 0))
+        self.assertNotIn('下書きの題', self.client.get(self.feed).content.decode())
+        self.assertContains(self.sc.get(reverse('family:staff_notice')), '下書きの題')
+        # 本文なしでは送れない → 書いて送信
+        url = reverse('family:staff_notice_edit', args=[n.pk])
+        res, _ = self.post({'title': '下書きの題', 'body': '', 'target_kind': 'all', 'action': 'send'}, url)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('本文を書いてください。', res.content.decode())
+        res, _ = self.post({'title': '直した題', 'body': '本文です', 'target_kind': 'all', 'action': 'send'}, url)
+        self.assertContains(res, '送信しました')
+        self.assertEqual(Notice.objects.count(), 1)
+        self.assertIn('直した題', self.client.get(self.feed).content.decode())
+        # 送信済みは書き換えられない
+        res, _ = self.post({'title': 'あとから', 'body': 'x', 'target_kind': 'all', 'action': 'send'}, url)
+        self.assertContains(res, '書き換えられません')
+        self.assertEqual(Notice.objects.get().title, '直した題')
+
+    def test_send_to_children_only(self):
+        res, push = self.post({'title': '個別の連絡', 'body': '次郎さんへ', 'target_kind': 'children',
+                               'children': [self.jiro.pk], 'action': 'send', 'notify_line': '1'})
+        self.assertContains(res, '1 人ぶん送信しました')
+        self.assertContains(res, 'LINE での知らせは送っていません')              # 次郎の保護者は LINE 未連携
+        push.assert_not_called()
+        self.assertEqual(Notice.objects.get().target_label, '架空 次郎 さん')
+        self.assertNotIn('個別の連絡', self.client.get(self.feed).content.decode())     # 太郎の保護者には出ない
+        # 子を選ばずに送信
+        res, _ = self.post({'title': 'x', 'body': 'y', 'target_kind': 'children', 'action': 'send'})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('配信先の子を選んでください。', res.content.decode())
+
+    def test_group_create_and_send(self):
+        groups = reverse('family:staff_notice_groups')
+        res = self.sc.post(groups, {'name': '低学年', 'members': [self.taro.pk, self.jiro.pk], 'action': 'save'}, follow=True)
+        self.assertContains(res, 'グループ「低学年」を保存しました（2 人）。')
+        g = NoticeGroup.objects.get()
+        self.assertEqual(self.sc.post(groups, {'name': '低学年', 'members': [self.taro.pk], 'action': 'save'}).status_code, 400)
+        self.assertEqual(self.sc.post(groups, {'name': '', 'members': [self.taro.pk], 'action': 'save'}).status_code, 400)
+        self.assertEqual(self.sc.post(groups, {'name': 'からっぽ', 'action': 'save'}).status_code, 400)
+        res, _ = self.post({'title': '低学年のみなさんへ', 'body': '本文', 'target_kind': 'group', 'group': g.pk, 'action': 'send'})
+        self.assertContains(res, '2 人ぶん送信しました')
+        n = Notice.objects.get()
+        self.assertEqual(n.target_label, 'グループ：低学年')
+        self.assertEqual(set(n.recipients.values_list('beneficiary_id', flat=True)), {self.taro.pk, self.jiro.pk})
+        # グループを直しても・消しても、送った相手は変わらない
+        self.sc.post(reverse('family:staff_notice_group', args=[g.pk]), {'name': '低学年', 'members': [self.hana.pk], 'action': 'save'})
+        self.assertEqual(set(g.members.all()), {self.hana})
+        self.sc.post(reverse('family:staff_notice_group', args=[g.pk]), {'action': 'delete'})
+        self.assertEqual(NoticeRecipient.objects.filter(notice=n).count(), 2)
+        self.assertIn('低学年のみなさんへ', self.client.get(self.feed).content.decode())
+        # グループを選ばずに送信
+        res, _ = self.post({'title': 'x', 'body': 'y', 'target_kind': 'group', 'action': 'send'})
+        self.assertIn('配信先のグループを選んでください。', res.content.decode())
+
+    def test_withdraw_and_delete_draft(self):
+        self.post({'title': '取り下げる', 'body': '本文', 'target_kind': 'all', 'action': 'send'})
+        n = Notice.objects.get()
+        res, _ = self.post({'action': 'delete'}, reverse('family:staff_notice_edit', args=[n.pk]))
+        self.assertContains(res, '取り下げました')
+        self.assertNotIn('取り下げる', self.client.get(self.feed).content.decode())
+        self.assertFalse(NoticeRecipient.objects.exists())
+
+    def test_gates_and_other_facility(self):
+        other_notice = Notice.objects.create(facility=self.other, title='よその知らせ', body='x', status='sent', sent_at=timezone.now())
+        NoticeRecipient.objects.create(notice=other_notice, beneficiary=self.taro)        # まちがった宛先でも、よその事業所のものは出さない
+        self.assertNotIn('よその知らせ', self.client.get(self.feed).content.decode())
+        self.assertEqual(self.sc.get(reverse('family:staff_notice_edit', args=[other_notice.pk])).status_code, 404)
+        self.assertNotContains(self.sc.get(reverse('family:staff_notice')), 'よその知らせ')
+        yoso = Beneficiary.objects.create(facility=self.other, last_name='他所', first_name='三郎', last_name_kana='よそ',
+                                          first_name_kana='さぶろう', date_of_birth=datetime.date(2016, 4, 1))
+        res, _ = self.post({'title': 'x', 'body': 'y', 'target_kind': 'children', 'children': [yoso.pk], 'action': 'send'})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.client_class().get(self.feed).status_code, 403)
+        self.assertEqual(self.client_class().get(reverse('family:staff_notice')).status_code, 302)
+        plain = Facility.objects.create(name='ふつうの事業所')
+        staff = StaffAccount.objects.create_user('plain_admin3', password='pw12345678', facility=plain, role=StaffAccount.ROLE_ADMIN)
+        c = self.client_class()
+        c.force_login(staff)
+        for name in ('family:staff_notice', 'family:staff_notice_new', 'family:staff_notice_groups'):
+            self.assertEqual(c.get(reverse(name)).status_code, 404)
+
+
+class PlanPageTests(Base):
+    """個別支援計画：職員の更新の一覧（今月＝赤・来月＝オレンジ）・保護者ページで本案を読む"""
+
+    def setUp(self):
+        super().setUp()
+        from support_plans.models import PlanGoal, SupportPlan
+        self.SupportPlan, self.PlanGoal = SupportPlan, PlanGoal
+        self.today = datetime.date.today()
+        self.enter()
+        self.client.post(reverse('family:child'), {'child': self.taro.pk})
+        self.sc = self.client_class()
+        self.sc.force_login(self.staff)
+
+    def plan(self, child, step=5, status='active', end=None, title='第1期 個別支援計画'):
+        p = self.SupportPlan.objects.create(facility=self.f, beneficiary=child, title=title, current_step=step, status=status,
+                                            manager=self.staff, created_by=self.staff)
+        d = p.get_step(2)
+        d.period_start, d.period_end = (end - datetime.timedelta(days=180) if end else None), end
+        d.policy, d.family_wishes = '安心して過ごせる場をつくります。', '友だちと遊びたい。'
+        d.save()
+        self.PlanGoal.objects.create(plan=p, goal_type='long', content='気持ちを言葉で伝えられる', target_date=end)
+        self.PlanGoal.objects.create(plan=p, goal_type='short', content='順番を待てる', support_content='絵カードで見通しを示す',
+                                     frequency='週3回', form_extra={'staff': '保育士'})
+        return p
+
+    def test_renewal_colors(self):
+        from support_plans import renewal
+        today = datetime.date(2026, 11, 20)
+        self.plan(self.taro, end=datetime.date(2026, 11, 30))                 # 今月 → 赤
+        self.plan(self.hana, end=datetime.date(2026, 12, 15))                 # 来月 → オレンジ
+        rows = {r['beneficiary'].pk: r for r in renewal.renewal_rows(self.f, today)}
+        self.assertEqual((rows[self.taro.pk]['color'], rows[self.taro.pk]['label']), ('red', '今月更新'))
+        self.assertEqual((rows[self.hana.pk]['color'], rows[self.hana.pk]['label']), ('orange', '来月更新'))
+        self.assertEqual((rows[self.jiro.pk]['color'], rows[self.jiro.pk]['label'], rows[self.jiro.pk]['plan']), ('black', '計画がありません', None))
+        self.assertEqual(renewal.renewal_counts(list(rows.values())), {'red': 1, 'orange': 1, 'none': 1})
+        # 12 月に見ると、太郎は期限切れ（赤）、花子は今月（赤）。年をまたぐ来月
+        rows = {r['beneficiary'].pk: r for r in renewal.renewal_rows(self.f, datetime.date(2026, 12, 1))}
+        self.assertEqual((rows[self.taro.pk]['color'], rows[self.taro.pk]['label']), ('red', '期限が過ぎています'))
+        self.assertEqual(rows[self.hana.pk]['label'], '今月更新')
+        self.plan(self.jiro, end=datetime.date(2027, 1, 10))
+        rows = {r['beneficiary'].pk: r for r in renewal.renewal_rows(self.f, datetime.date(2026, 12, 1))}
+        self.assertEqual(rows[self.jiro.pk]['color'], 'orange')
+        # 先の計画は黒。次の計画を作成中なら、そちらへ
+        rows = {r['beneficiary'].pk: r for r in renewal.renewal_rows(self.f, datetime.date(2026, 6, 1))}
+        self.assertEqual((rows[self.taro.pk]['color'], rows[self.taro.pk]['label']), ('black', ''))
+        nxt = self.plan(self.taro, step=2, status='in_progress', title='第2期 個別支援計画')
+        rows = {r['beneficiary'].pk: r for r in renewal.renewal_rows(self.f, today)}
+        self.assertEqual((rows[self.taro.pk]['plan'], rows[self.taro.pk]['color']), (nxt, 'red'))
+
+    def test_renewal_page(self):
+        p = self.plan(self.taro, end=self.today)
+        html = self.sc.get(reverse('support_plans:renewal')).content.decode()
+        self.assertIn('rn-row is-red', html)
+        self.assertIn(reverse('support_plans:detail', args=[p.pk]), html)
+        self.assertIn(f'{reverse("support_plans:create")}?beneficiary={self.jiro.pk}', html)
+        self.assertIn(f'href="{reverse("support_plans:renewal")}"', self.sc.get(reverse('facilities:home_icons')).content.decode())
+        plain = Facility.objects.create(name='ふつうの事業所')
+        staff = StaffAccount.objects.create_user('plain_admin4', password='pw12345678', facility=plain, role=StaffAccount.ROLE_ADMIN)
+        c = self.client_class()
+        c.force_login(staff)
+        self.assertEqual(c.get(reverse('support_plans:renewal')).status_code, 404)
+
+    def test_parent_sees_final_plan_only(self):
+        url = reverse('family:plan')
+        self.assertIn('まだありません', self.client.get(url).content.decode())
+        self.plan(self.taro, step=2, status='in_progress', title='作成中の計画')         # 原案 → 見せない
+        self.plan(self.hana, end=self.today, title='花子の計画')                          # きょうだいの計画 → いまは太郎を見ている
+        self.assertIn('まだありません', self.client.get(url).content.decode())
+        self.plan(self.taro, end=self.today + datetime.timedelta(days=90), title='太郎の計画')
+        html = self.client.get(url).content.decode()
+        for text in ('太郎の計画', 'いまの計画', '安心して過ごせる場をつくります。', '友だちと遊びたい。', '気持ちを言葉で伝えられる',
+                     '順番を待てる', '絵カードで見通しを示す', '週3回', '保育士'):
+            self.assertIn(text, html)
+        self.assertNotIn('作成中の計画', html)
+        self.assertNotIn('花子の計画', html)
+        # 説明・同意の前の本案も見られる（印を変える）。終了した計画は出さない
+        self.plan(self.taro, step=4, status='in_progress', title='次の計画')
+        self.plan(self.taro, status='closed', title='終わった計画')
+        html = self.client.get(url).content.decode()
+        self.assertIn('次の計画', html)
+        self.assertIn('同意の前', html)
+        self.assertNotIn('終わった計画', html)
+        self.assertEqual(self.client_class().get(url).status_code, 403)
+
+
+class MergeWithFamilyDataTests(Base):
+    """重複した利用者をまとめる（beneficiaries/merge.py）とき、お知らせ・グループ・連絡帳・利用日申請がこわれないこと"""
+
+    def test_merge_moves_notices_groups_and_requests(self):
+        from beneficiaries import merge
+        keep, drop = self.taro, self.jiro
+        both = Notice.objects.create(facility=self.f, title='全員へ', body='x', status='sent', sent_at=timezone.now())
+        only = Notice.objects.create(facility=self.f, title='次郎だけ', body='y', status='sent', sent_at=timezone.now())
+        draft = Notice.objects.create(facility=self.f, title='下書き', target_kind='children')
+        draft.children.add(drop)
+        NoticeRecipient.objects.create(notice=both, beneficiary=keep, read_at=timezone.now())
+        NoticeRecipient.objects.create(notice=both, beneficiary=drop)
+        NoticeRecipient.objects.create(notice=only, beneficiary=drop)
+        group = NoticeGroup.objects.create(facility=self.f, name='低学年')
+        group.members.add(drop)
+        day = timezone.localdate() + datetime.timedelta(days=5)
+        UseRequest.objects.create(facility=self.f, beneficiary=drop, date=day)
+        ScheduledVisit.objects.create(facility=self.f, beneficiary=drop, date=day)
+        ContactBook.objects.create(facility=self.f, beneficiary=drop, date=day, body='z')
+        self.assertEqual(merge.plan(keep, drop)['conflicts'], [])
+        merge.merge(keep, drop)
+        self.assertFalse(Beneficiary.objects.filter(pk=drop.pk).exists())
+        self.assertEqual(set(NoticeRecipient.objects.filter(beneficiary=keep).values_list('notice__title', flat=True)), {'全員へ', '次郎だけ'})
+        self.assertIsNotNone(NoticeRecipient.objects.get(notice=both).read_at)          # 残すほうの「読んだ」を保つ
+        self.assertEqual(set(group.members.all()), {keep})
+        self.assertEqual(set(draft.children.all()), {keep})
+        self.assertEqual(UseRequest.objects.get().beneficiary, keep)
+        self.assertEqual(ContactBook.objects.get().beneficiary, keep)
+
+    def test_same_day_contact_books_block_merge(self):
+        from beneficiaries import merge
+        day = timezone.localdate()
+        ContactBook.objects.create(facility=self.f, beneficiary=self.taro, date=day, body='a')
+        ContactBook.objects.create(facility=self.f, beneficiary=self.jiro, date=day, body='b')
+        conflicts = merge.plan(self.taro, self.jiro)['conflicts']
+        self.assertTrue(any('連絡帳' in c for c in conflicts))
+        with self.assertRaises(ValueError):
+            merge.merge(self.taro, self.jiro)

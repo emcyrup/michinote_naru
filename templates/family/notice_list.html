@@ -1,0 +1,48 @@
+{% extends 'family/base.html' %}
+{% block title %}お知らせ — {{ facility.name }}{% endblock %}
+{% block extra_css %}
+<style>
+  .nt-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px 16px; }
+  .nt-card + .nt-card { margin-top: 10px; }
+  .nt-card.is-new { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+  .nt-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .nt-title { font-size: 1.1rem; font-weight: 700; flex: 1 1 auto; min-width: 0; }
+  .nt-new { background: #d63a2f; color: #fff; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+  .nt-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1.02rem; line-height: 1.75; margin-top: 8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'family:home' %}" aria-label="もどる"><i class="bi bi-chevron-left"></i></a>お知らせ</div>
+
+{% for r in items %}
+<article class="nt-card{% if not r.read_at %} is-new{% endif %}">
+  <div class="nt-head">
+    <span class="nt-title">{{ r.notice.title }}</span>
+    {% if not r.read_at %}<span class="nt-new">新着</span>{% endif %}
+  </div>
+  <div class="fm-meta">{{ r.notice.sent_at|date:'Y年n月j日（D）H:i' }}　{{ facility.name }}より</div>
+  <div class="nt-body">{{ r.notice.body|urlize }}</div>
+</article>
+{% empty %}
+<div class="fm-card text-center text-muted">お知らせは、まだありません。</div>
+{% endfor %}
+
+{% if more > 0 %}<a href="?all=1" class="btn btn-outline-secondary w-100 mt-3">これより前のお知らせも見る（あと {{ more }} 件）</a>{% endif %}
+
+{% if unread %}
+<form method="post" id="nt-read" class="mt-3">{% csrf_token %}
+  <noscript><button type="submit" class="fm-btn">読みました</button></noscript>
+</form>
+<script>
+// 読んだことを記録する（画面が出てから送る。リンクの下見では送られない）
+(function () {
+  var form = document.getElementById('nt-read');
+  if (!form || !window.fetch) return;
+  fetch(form.action || location.href, {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'X-Requested-With': 'fetch', 'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value},
+  }).catch(function () {});
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}お知らせ — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}お知らせ{% endblock %}
+{% block nav_family_notice %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .nl-tools { display: flex; gap: 8px; margin-bottom: 12px; }
+  .nl-tools .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
+  .nl-row { flex-direction: column; align-items: stretch; gap: 4px; position: relative; padding-right: 38px; }
+  .nl-row > .bi-chevron-right { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+  .nl-title { font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+  .nl-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: .82rem; color: #666; align-items: center; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="nl-tools">
+    <a href="{% url 'family:staff_notice_new' %}" class="btn btn-primary" id="nl-new"><i class="bi bi-star-fill"></i> 新規作成</a>
+    <a href="{% url 'family:staff_notice_groups' %}" class="btn btn-outline-secondary"><i class="bi bi-people"></i> グループ</a>
+  </div>
+
+  {% if drafts %}
+  <div class="daylist-head">下書き（保護者にはまだ見えません）</div>
+  <ul class="daylist">
+    {% for n in drafts %}
+    <li><a class="dayitem nl-row" href="{% url 'family:staff_notice_edit' n.pk %}">
+      <span class="nl-title">{{ n.title|default:'（タイトルなし）' }}</span>
+      <span class="nl-meta"><span class="dayitem-state is-draft"><i class="bi bi-pencil-fill"></i> 下書き</span><span>配信先：{{ n.label }}</span><span>{{ n.updated_at|date:'n/j H:i' }}</span></span>
+      <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="daylist-head">これまでのお知らせ</div>
+  {% if sent %}
+  <ul class="daylist">
+    {% for n in sent %}
+    <li><a class="dayitem nl-row" href="{% url 'family:staff_notice_edit' n.pk %}">
+      <span class="nl-title">{{ n.title }}</span>
+      <span class="nl-meta"><span>{{ n.sent_at|date:'Y年n月j日（D）H:i' }}</span><span>配信先：{{ n.target_label }}</span>
+        <span class="dayitem-state{% if n.n_read == n.n_to %} is-done{% endif %}">読んだ {{ n.n_read }} / {{ n.n_to }} 人</span></span>
+      <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="day-empty">送信したお知らせは、まだありません。<div class="small mt-1">「新規作成」から書けます。</div></div>
+  {% endif %}
+
+  {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_icons' %}" class="small"><i class="bi bi-chevron-left"></i> ホームへ</a></div>{% endif %}
+</div>
+{% endblock %}
