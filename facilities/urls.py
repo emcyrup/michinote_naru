@@ -6,6 +6,7 @@ app_name = 'facilities'
 urlpatterns = [
     path('', views.DashboardView.as_view(), name='dashboard'),
     path('home/', views.HomeIconsView.as_view(), name='home_icons'),
+    path('home/other/', views.HomeOtherView.as_view(), name='home_other'),
     path('home/soon/<slug:key>/', views.SoonView.as_view(), name='soon'),
 
     # 施設設定
