@@ -112,9 +112,26 @@ jobs:
             echo "SSH の Secrets（$N）が未登録です（docs/DEPLOY_NARU.md の「GitHub Secrets」）"; exit 1
           fi
           mkdir -p ~/.ssh
-          printf '%s\n' "$K" > ~/.ssh/deploy_key
+          # Windows の改行（CR）が混ざっていても読めるようにする
+          printf '%s\n' "$K" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          # 鍵を確かめる（指紋は公開鍵のもので、秘密ではない。サーバーの authorized_keys と見比べるために出す）
+          if ! head -n 1 ~/.ssh/deploy_key | grep -q -- '-----BEGIN .*PRIVATE KEY-----'; then
+            echo "ERROR: SSH の鍵の Secrets が秘密鍵の形ではありません（-----BEGIN … PRIVATE KEY----- の行から -----END … の行まで、全文を入れてください。公開鍵（ssh-ed25519 … や ssh-rsa … の 1 行）ではありません）"; exit 1
+          fi
+          if ! ssh-keygen -y -P '' -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub 2>/dev/null; then
+            echo "ERROR: SSH の秘密鍵を読めません（途中で切れている・改行が抜けている・パスフレーズつき のどれか。パスフレーズなしの鍵の全文を入れてください）"; exit 1
+          fi
+          echo "使う鍵の指紋（公開鍵）: $(ssh-keygen -lf ~/.ssh/deploy_key.pub | awk '{print $2, $NF}')"
+          echo "  サーバーで ssh-keygen -lf ~/.ssh/authorized_keys を実行して、同じ指紋の行があるか見比べられます"
           ssh-keyscan -p "$P" -H "$H" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "ERROR: サーバーに届きません（ホスト名の Secrets か SSH のポートを確かめてください）"; exit 1; }
+          # 先に入れるか確かめる（入れないときに、理由を分かる形で止める）
+          if ! ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -p "$P" "$U@$H" true 2> ~/.ssh/err.txt; then
+            sed -E 's/^[^:]*@[^:]*: //' ~/.ssh/err.txt | tail -n 3
+            echo "ERROR: サーバーに SSH で入れません。上の指紋の公開鍵が、Secrets のユーザーの ~/.ssh/authorized_keys に入っているか、ユーザー名・ホスト名の Secrets が合っているかを確かめてください"; exit 1
+          fi
+          echo "SSH: OK"
           { echo "SSH_HOST=$H"; echo "SSH_USER=$U"; echo "SSH_PORT=$P"; } >> "$GITHUB_ENV"
 
       - name: Checkout, prepare venv and .env (first time only), migrate, restart gunicorn
@@ -222,7 +239,7 @@ jobs:
             # 5) pip → migrate → collectstatic → Gunicorn の再起動 → サーバーの中からの healthz
             APP_DIR="$APP_DIR" VENV="$VENV" SKIP_MIGRATE="$SKIP_MIGRATE" bash deploy/venv-deploy.sh "$SHA"
           REMOTE
-          } | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s
+          } | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s
 
       - name: Health check (public URL)
         run: |
