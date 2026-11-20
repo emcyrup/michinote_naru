@@ -60,7 +60,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Production is deployed from main only (family: main or family)
+      - name: Production is deployed from main only (family app also from the family branch)
         if: inputs.target == 'prod' && github.ref != 'refs/heads/main' && !(inputs.app == 'family' && github.ref == 'refs/heads/family')
         run: |
           echo "本番（prod）はブランチ main（保護者向けは main か family）を選んで実行してください"; exit 1
