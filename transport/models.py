@@ -188,3 +188,88 @@ class RouteEstimate(models.Model):
     @property
     def source_label(self):
         return self.SOURCE_LABELS.get(self.source, self.source)
+
+
+# =============================================
+# 便ごとの配車（2026-11。来所予定で動く事業所＝放課後等デイサービスなど）
+#   曜日ごとの送迎パターン（便 = 車両 × 運転手 × 乗る子と時刻）を作り、「この月に適応」でその曜日の日すべてに写す。
+#   写したあとは、日ごとの配車（DayRoute）を直す。上の TransportAssignment（予約 × 迎え／送り）とは別の持ち方
+# =============================================
+class RoutePattern(models.Model):
+    """曜日ごとの送迎パターンの便"""
+    NAME_MAX = 20
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='route_patterns')
+    weekday = models.PositiveSmallIntegerField(verbose_name='曜日（0=月 … 6=日）')
+    direction = models.CharField(max_length=10, choices=DIRECTIONS, verbose_name='迎え／送り')
+    name = models.CharField(max_length=NAME_MAX, verbose_name='便の名前', help_text='例：1便・学校コース')
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='車両')
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='運転手')
+    depart_time = models.TimeField(null=True, blank=True, verbose_name='出発の時刻')
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        verbose_name = '送迎パターンの便'
+        verbose_name_plural = '送迎パターンの便'
+        ordering = ['weekday', 'direction', 'order', 'pk']
+
+    def __str__(self):
+        return f'{self.get_direction_display()} {self.name}'
+
+
+class RoutePatternStop(models.Model):
+    pattern = models.ForeignKey(RoutePattern, on_delete=models.CASCADE, related_name='stops')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='route_pattern_stops', verbose_name='利用者')
+    time = models.TimeField(null=True, blank=True, verbose_name='時刻')
+    place = models.CharField(max_length=100, blank=True, verbose_name='場所')
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        verbose_name = '送迎パターンの便に乗る子'
+        verbose_name_plural = '送迎パターンの便に乗る子'
+        ordering = ['order', 'pk']
+        constraints = [models.UniqueConstraint(fields=['pattern', 'beneficiary'], name='route_pattern_stop_once')]
+
+
+class DayRoute(models.Model):
+    """その日の便（パターンから写したもの、またはその日だけ足したもの）"""
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='day_routes')
+    date = models.DateField(verbose_name='日付')
+    direction = models.CharField(max_length=10, choices=DIRECTIONS, verbose_name='迎え／送り')
+    name = models.CharField(max_length=RoutePattern.NAME_MAX, verbose_name='便の名前')
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='車両')
+    driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='運転手')
+    depart_time = models.TimeField(null=True, blank=True, verbose_name='出発の時刻')
+    note = models.CharField(max_length=100, blank=True, verbose_name='備考')
+    order = models.PositiveSmallIntegerField(default=0)
+    pattern = models.ForeignKey(RoutePattern, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', verbose_name='もとのパターン')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'その日の便'
+        verbose_name_plural = 'その日の便'
+        ordering = ['date', 'direction', 'order', 'pk']
+        indexes = [models.Index(fields=['facility', 'date'], name='day_route_facility_date')]
+
+    def __str__(self):
+        return f'{self.date} {self.get_direction_display()} {self.name}'
+
+
+class DayRouteStop(models.Model):
+    route = models.ForeignKey(DayRoute, on_delete=models.CASCADE, related_name='stops')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='day_route_stops', verbose_name='利用者')
+    time = models.TimeField(null=True, blank=True, verbose_name='時刻')
+    place = models.CharField(max_length=100, blank=True, verbose_name='場所')
+    # いつもの時刻（パターンから写したときの時刻）。その日の時刻がこれと違えば、一覧で色と注釈を付ける
+    usual_time = models.TimeField(null=True, blank=True, verbose_name='いつもの時刻')
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'その日の便に乗る子'
+        verbose_name_plural = 'その日の便に乗る子'
+        ordering = ['order', 'pk']
+        constraints = [models.UniqueConstraint(fields=['route', 'beneficiary'], name='day_route_stop_once')]
+
+    @property
+    def time_changed(self):
+        return bool(self.usual_time and self.time and self.usual_time != self.time)

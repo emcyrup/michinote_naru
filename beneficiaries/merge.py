@@ -33,7 +33,7 @@ UNIQUE_BY = {
     'contact_books': (('date',), '連絡帳'),
 }
 # 同じものが両方にあれば、消すほうのぶんを捨てるもの：{関連の名前: 同じかどうかを見る欄}（例：同じお知らせが 2 人に届いている）
-DROP_DUPLICATES = {'notices_received': 'notice_id'}
+DROP_DUPLICATES = {'notices_received': 'notice_id', 'route_pattern_stops': 'pattern_id', 'day_route_stops': 'route_id'}
 ONE_TO_ONE = {'therapy_profile': '療育記録の留意点', 'transport': '送迎の設定', 'health_profile': '健康の基本情報'}
 
 

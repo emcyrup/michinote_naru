@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}{{ direction_label }}の便 — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}{% if kind == 'pattern' %}曜日の送迎パターン{% else %}送迎・配車{% endif %}{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% include 'transport/_route_style.html' %}{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{{ back }}" class="small"><i class="bi bi-chevron-left"></i> もどる</a></div>
+  {% if problem %}<div class="alert alert-danger">{{ problem }}</div>{% endif %}
+
+  <form method="post" class="rt-form" id="rt-form">
+    {% csrf_token %}
+    <input type="hidden" name="direction" value="{{ direction }}">
+    {% if kind == 'pattern' %}<input type="hidden" name="wd" value="{{ weekday }}">{% else %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">{% endif %}
+    <div class="fw-bold mb-3" style="font-size:1.1rem;">
+      {% if kind == 'pattern' %}{{ weekday_label }}曜の{{ direction_label }}の便{% else %}{{ day|date:'n月j日（D）' }}の{{ direction_label }}の便{% endif %}{% if not route %}を足す{% endif %}
+    </div>
+    <div class="rt-grid mb-3">
+      <div><label for="rt-name" class="form-label fw-bold">便の名前</label>
+        <input type="text" name="name" id="rt-name" class="form-control" value="{{ route.name|default:'' }}" maxlength="20" placeholder="例：1便" required></div>
+      <div><label for="rt-time" class="form-label fw-bold">出発の時刻</label>
+        <input type="time" name="depart_time" id="rt-time" class="form-control" value="{{ route.depart_time|time:'H:i' }}" step="300"></div>
+      <div><label for="rt-vehicle" class="form-label fw-bold">車両</label>
+        <select name="vehicle" id="rt-vehicle" class="form-select"><option value="">— 未定 —</option>
+          {% for v in vehicles %}<option value="{{ v.pk }}"{% if route.vehicle_id == v.pk %} selected{% endif %}>{{ v.name }}{% if v.capacity %}（{{ v.capacity }} 人乗り）{% endif %}</option>{% endfor %}</select></div>
+      <div><label for="rt-driver" class="form-label fw-bold">運転手</label>
+        <select name="driver" id="rt-driver" class="form-select"><option value="">— 未定 —</option>
+          {% for d in drivers %}<option value="{{ d.pk }}"{% if route.driver_id == d.pk %} selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+    </div>
+    {% if kind == 'day' %}
+    <label for="rt-note" class="form-label fw-bold">備考</label>
+    <input type="text" name="note" id="rt-note" class="form-control mb-3" value="{{ route.note|default:'' }}" maxlength="100" placeholder="例：帰りに○○へ寄る">
+    {% endif %}
+
+    <div class="fw-bold mb-1">乗る子と時刻 <span class="fw-normal small text-muted" id="rt-count"></span></div>
+    <div class="small text-muted mb-2">乗る子にチェックを付け、{% if direction == 'pickup' %}迎えに行く{% else %}送り届ける{% endif %}時刻と場所を入れます。時刻の早い順に並びます。{% if kind == 'day' %}この日に来る子が上です。{% else %}この曜日が契約曜日の子が上です。{% endif %}</div>
+    <ul class="rt-riders">
+      {% for r in riders %}
+      <li class="{% if r.on %}is-on{% endif %}">
+        <label class="n"><input type="checkbox" name="riders" value="{{ r.beneficiary.pk }}"{% if r.on %} checked{% endif %}
+               data-time="{{ r.default_time|time:'H:i' }}" data-place="{{ r.default_place }}">
+          <span>{{ r.beneficiary.full_name }}
+            {% if kind == 'day' %}{% if r.absent %}<span class="rt-mark is-absent">欠席</span>{% elif not r.has_visit %}<span class="rt-mark is-alert">来所予定なし</span>{% endif %}
+            {% elif r.regular %}<span class="rt-mark is-changed" style="background:#e3f3e6;color:#1e6b33;">契約曜日</span>{% endif %}</span></label>
+        <input type="time" name="t_{{ r.beneficiary.pk }}" value="{{ r.time|time:'H:i' }}" step="300" aria-label="{{ r.beneficiary.full_name }} の時刻">
+        <input type="text" name="p_{{ r.beneficiary.pk }}" value="{{ r.place }}" maxlength="100" placeholder="場所（学校・自宅など）" aria-label="{{ r.beneficiary.full_name }} の場所">
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="rt-btns">
+      <button type="submit" name="action" value="save" class="btn btn-primary" id="rt-save">保存する</button>
+      {% if route %}<button type="submit" name="action" value="delete" class="btn btn-outline-danger" formnovalidate onclick="return confirm('この便を消します。よろしいですか？');">この便を消す</button>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// チェックを付けたとき、時刻・場所が空なら、利用者の送迎の設定（いつもの時刻・場所）を入れる
+(function () {
+  var form = document.getElementById('rt-form');
+  var boxes = [].slice.call(form.querySelectorAll('input[name=riders]'));
+  var count = document.getElementById('rt-count');
+  function refresh() {
+    var n = 0;
+    boxes.forEach(function (b) { b.closest('li').classList.toggle('is-on', b.checked); if (b.checked) n++; });
+    count.textContent = '（' + n + ' 人）';
+  }
+  boxes.forEach(function (b) {
+    b.addEventListener('change', function () {
+      if (b.checked) {
+        var t = form.querySelector('[name="t_' + b.value + '"]'), p = form.querySelector('[name="p_' + b.value + '"]');
+        if (t && !t.value && b.getAttribute('data-time')) t.value = b.getAttribute('data-time');
+        if (p && !p.value && b.getAttribute('data-place')) p.value = b.getAttribute('data-place');
+      }
+      refresh();
+    });
+  });
+  refresh();
+})();
+</script>
+{% endblock %}
