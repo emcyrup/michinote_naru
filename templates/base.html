@@ -350,6 +350,14 @@
           <span>支援計画</span>
         </a>
       </li>
+      {% if features.transport %}
+      <li>
+        <a class="sidebar-nav-item {% if request.resolver_match.app_name == 'transport' %}active{% endif %}" href="{% url 'transport:day' %}" title="その日の迎え・送りの便と乗る子（配車）。曜日のパターン・車両・運転手の登録もここから">
+          <i class="bi bi-truck"></i>
+          <span>送迎・配車</span>
+        </a>
+      </li>
+      {% endif %}
       {% if features.shift %}
       <li>
         <a class="sidebar-nav-item {% if request.resolver_match.app_name == 'shifts' %}active{% endif %}" href="{% url 'shifts:month' %}" title="月の勤務表（シフト）を作って印刷します">

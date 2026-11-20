@@ -325,6 +325,9 @@ class DayView(TransportEnabledMixin, View):
     template_name = 'transport/day.html'
 
     def get(self, request):
+        # 予約を使わない事業所（来所予定で動く放課後等デイサービスなど）は、便ごとの配車の画面へ
+        if not request.user.facility.use_reservation:
+            return redirect('transport:routes')
         day = parse_day(request.GET.get('d'))
         return render(request, self.template_name, day_context(request.user.facility, day))
 

@@ -1,0 +1,55 @@
+<style>
+  .rt-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .rt-head { font-size: 1.05rem; font-weight: 700; margin: 16px 2px 8px; display: flex; align-items: center; gap: 8px; }
+  .rt-head .btn { margin-left: auto; }
+  .rt-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .rt-card.is-over { border-color: #e0a0a0; }
+  .rt-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .rt-name { font-size: 1.05rem; font-weight: 700; }
+  .rt-meta { font-size: .88rem; color: #555; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+  .rt-meta .is-none { color: #a15c00; }
+  .rt-edit { margin-left: auto; }
+  .rt-stops { list-style: none; margin: 8px 0 0; padding: 0; }
+  .rt-stops li { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-top: 1px solid #f0ece4; flex-wrap: wrap; }
+  .rt-stops .t { flex: 0 0 3.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rt-stops .n { flex: 1 1 auto; min-width: 0; }
+  .rt-stops .pl { color: #777; font-size: .82rem; }
+  .rt-stops li.is-changed { background: #fff6e2; border-radius: 8px; }
+  .rt-stops li.is-changed .t { color: #a15c00; }
+  .rt-stops li.is-off { background: #f3f1ed; color: #888; border-radius: 8px; }
+  .rt-stops li.is-off .n { text-decoration: line-through; }
+  .rt-mark { font-size: .75rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  .rt-mark.is-changed { background: #fdeccd; color: #a15c00; }
+  .rt-mark.is-alert { background: #fbe3e0; color: #c0392b; }
+  .rt-mark.is-absent { background: #e4e1db; color: #666; }
+  .rt-mark.is-over { background: #fbe3e0; color: #c0392b; }
+  .rt-un { background: #fff6e2; border: 1px solid #e8b25a; border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; font-size: .92rem; }
+  .rt-empty { text-align: center; color: #777; background: #fff; border: 1px dashed #d9d3c8; border-radius: 12px; padding: 18px 12px; margin-bottom: 10px; }
+  .rt-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rt-tabs a { flex: 1 1 0; min-width: 44px; text-align: center; padding: 8px 4px; border-radius: 12px; background: #fff; border: 1px solid #e6e1d8; color: #333; text-decoration: none; font-weight: 700; }
+  .rt-tabs a small { display: block; font-weight: 400; font-size: .7rem; color: #777; }
+  .rt-tabs a.is-on { background: var(--color-primary, #4e7ea8); border-color: var(--color-primary, #4e7ea8); color: #fff; }
+  .rt-tabs a.is-on small { color: #fff; }
+  .rt-apply { background: #fff; border: 1px solid #cfd9e4; border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
+  .rt-apply-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .rt-form { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; }
+  .rt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .rt-riders { list-style: none; margin: 0; padding: 0; border: 1px solid #e6e1d8; border-radius: 12px; overflow: hidden; }
+  .rt-riders li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #f0ece4; flex-wrap: wrap; }
+  .rt-riders li:first-child { border-top: 0; }
+  .rt-riders li.is-on { background: #f3f8fc; }
+  .rt-riders label.n { flex: 1 1 150px; min-width: 0; display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+  .rt-riders label.n input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .rt-riders input[type=time] { width: 112px; font-size: 1rem; padding: 6px; border: 1px solid #cfc8bb; border-radius: 8px; }
+  .rt-riders input[type=text] { flex: 1 1 120px; min-width: 0; font-size: .95rem; padding: 6px 8px; border: 1px solid #cfc8bb; border-radius: 8px; }
+  /* チェックを付けた子だけ、時刻と場所の欄を出す（一覧が長くならないように） */
+  .rt-riders li:not(.is-on) input[type=time], .rt-riders li:not(.is-on) input[type=text] { display: none; }
+  .rt-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .rt-btns .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .rt-btns { padding-right: 72px; } }
+  @media print {
+    .sidebar, .topbar, .rt-tools, .daynav-btn, .daynav-tools, .rt-edit, .rt-head .btn, .ai-chat-fab, .memo-fab, .alert, .rt-foot { display: none !important; }
+    .rt-card { break-inside: avoid; border-color: #999; }
+    body, .main-content { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+  }
+</style>

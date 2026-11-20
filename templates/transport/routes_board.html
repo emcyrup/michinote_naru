@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}配車（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}送迎・配車{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% include 'transport/_route_style.html' %}{% endblock %}
+{% block content %}
+<div class="daywrap">
+  {% include 'includes/day_nav.html' %}
+
+  <div class="rt-tools">
+    <a href="{% url 'transport:route_patterns' %}?wd={{ weekday_index }}" class="btn btn-outline-primary"><i class="bi bi-calendar-week"></i> 曜日のパターン</a>
+    <a href="{% url 'transport:vehicles' %}" class="btn btn-outline-secondary"><i class="bi bi-truck"></i> 車両・運転手</a>
+    {% if has_routes %}<button type="button" class="btn btn-outline-secondary ms-auto" onclick="window.print()"><i class="bi bi-printer"></i> 印刷</button>{% endif %}
+  </div>
+
+  {% if alerts %}<div class="alert alert-danger py-2"><i class="bi bi-exclamation-triangle-fill"></i> 便に乗っているのに、この日の来所予定が無い（または欠席の）子が {{ alerts }} 人います。</div>{% endif %}
+  {% if changed %}<div class="alert alert-warning py-2"><i class="bi bi-clock-history"></i> いつもと時刻の違う子が {{ changed }} 人います（色の付いた行）。</div>{% endif %}
+
+  {% for sec in sections %}
+  <div class="rt-head">{% if sec.direction == 'pickup' %}<i class="bi bi-box-arrow-in-right"></i>{% else %}<i class="bi bi-box-arrow-right"></i>{% endif %} {{ sec.label }}
+    <a href="{% url 'transport:route_new' %}?date={{ day|date:'Y-m-d' }}&direction={{ sec.direction }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg"></i> 便を足す</a></div>
+
+  {% if sec.unassigned %}
+  <div class="rt-un"><i class="bi bi-exclamation-circle-fill"></i> {{ sec.label }}があるのに、どの便にも乗っていない子：{% for b in sec.unassigned %}<b>{{ b.full_name }}</b>{% if not forloop.last %}・{% endif %}{% endfor %}</div>
+  {% endif %}
+
+  {% for r in sec.routes %}
+  <div class="rt-card{% if r.over %} is-over{% endif %}">
+    <div class="rt-top">
+      <span class="rt-name">{{ r.name }}</span>
+      <span class="rt-meta">
+        {% if r.depart_time %}<span><i class="bi bi-clock"></i> {{ r.depart_time|time:'H:i' }} 発</span>{% endif %}
+        <span{% if not r.vehicle %} class="is-none"{% endif %}><i class="bi bi-truck"></i> {{ r.vehicle.name|default:'車両が未定' }}</span>
+        <span{% if not r.driver %} class="is-none"{% endif %}><i class="bi bi-person"></i> {{ r.driver.name|default:'運転手が未定' }}</span>
+        <span>{{ r.riders }} 人{% if r.vehicle.capacity %}／{{ r.vehicle.capacity }} 人乗り{% endif %}</span>
+        {% if r.over %}<span class="rt-mark is-over">定員をこえています</span>{% endif %}
+      </span>
+      <a href="{% url 'transport:route_edit' r.pk %}" class="btn btn-sm btn-outline-secondary rt-edit">直す</a>
+    </div>
+    {% if r.note %}<div class="small text-muted mt-1">{{ r.note }}</div>{% endif %}
+    <ul class="rt-stops">
+      {% for s in r.stop_list %}
+      <li class="{% if s.no_visit or s.absent %}is-off{% elif s.changed %}is-changed{% endif %}">
+        <span class="t">{{ s.time|time:'H:i'|default:'—' }}</span>
+        <span class="n">{{ s.beneficiary.full_name }} <small class="text-muted">さん</small>{% if s.place %} <span class="pl">{{ s.place }}</span>{% endif %}</span>
+        {% if s.no_visit %}<span class="rt-mark is-alert">来所予定なし</span>
+        {% elif s.absent %}<span class="rt-mark is-absent">欠席</span>
+        {% elif s.changed %}<span class="rt-mark is-changed">いつもは {{ s.usual_time|time:'H:i' }}</span>{% endif %}
+      </li>
+      {% empty %}<li class="text-muted">乗る子が、まだいません。</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% empty %}
+  <div class="rt-empty">この日の{{ sec.label }}の便は、まだありません。</div>
+  {% endfor %}
+  {% endfor %}
+
+  <div class="rt-foot text-center mt-3 small">
+    {% if has_pattern %}
+    <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+      <button type="submit" name="action" value="apply_day" class="btn btn-sm btn-link" onclick="return confirm('この日の便を消して、{{ weekday }}曜のパターンから入れ直します。よろしいですか？');">この日を、{{ weekday }}曜のパターンから入れ直す</button>
+    </form>
+    {% endif %}
+    {% if features.home_icons %}<span class="mx-2 text-muted">|</span><a href="{% url 'facilities:home_icons' %}"><i class="bi bi-chevron-left"></i> ホームへ</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

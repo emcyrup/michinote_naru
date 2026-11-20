@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}曜日の送迎パターン — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}曜日の送迎パターン{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}{% include 'transport/_route_style.html' %}{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'transport:routes' %}" class="small"><i class="bi bi-chevron-left"></i> 日ごとの配車へ</a></div>
+
+  <div class="rt-apply">
+    <div class="fw-bold mb-1"><i class="bi bi-magic"></i> 曜日のパターンを、月の日に写す</div>
+    <div class="small text-muted mb-2">月〜日のパターンをまとめて、その月の同じ曜日の日すべてに写します（きょうからあと。休業日は除く）。写したあとは、日ごとの配車で直せます。</div>
+    {% if total %}
+    <form method="post" class="rt-apply-row">{% csrf_token %}<input type="hidden" name="wd" value="{{ weekday }}">
+      <select name="ym" class="form-select" style="width:auto;" aria-label="写す月">{% for m in months %}<option value="{{ m.ym }}">{{ m.label }}</option>{% endfor %}</select>
+      <label class="small d-flex align-items-center gap-1 mb-0"><input type="checkbox" name="overwrite" value="1" style="width:20px;height:20px;"> 入っている日も入れ直す</label>
+      <button type="submit" class="btn btn-primary" id="rt-apply-btn">この月に適応</button>
+    </form>
+    {% else %}<div class="small">先に、下で曜日ごとの便を登録してください。</div>{% endif %}
+  </div>
+
+  <div class="rt-tabs" role="tablist" aria-label="曜日">
+    {% for t in tabs %}<a href="?wd={{ t.i }}" class="{% if t.i == weekday %}is-on{% endif %}"{% if t.i == weekday %} aria-current="true"{% endif %}>{{ t.label }}<small>{{ t.n }} 便</small></a>{% endfor %}
+  </div>
+
+  {% if not vehicles or not drivers %}
+  <div class="alert alert-info py-2">車両・運転手がまだ登録されていません。<a href="{% url 'transport:vehicles' %}">車両・運転手の登録</a>を先にすると、便に選べます（あとからでも入れられます）。</div>
+  {% endif %}
+
+  {% for sec in sections %}
+  <div class="rt-head">{{ weekday_label }}曜の{{ sec.label }}
+    <a href="{% url 'transport:route_pattern_new' %}?wd={{ weekday }}&direction={{ sec.direction }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg"></i> 便を足す</a></div>
+  {% for r in sec.routes %}
+  <div class="rt-card{% if r.over %} is-over{% endif %}">
+    <div class="rt-top">
+      <span class="rt-name">{{ r.name }}</span>
+      <span class="rt-meta">
+        {% if r.depart_time %}<span><i class="bi bi-clock"></i> {{ r.depart_time|time:'H:i' }} 発</span>{% endif %}
+        <span{% if not r.vehicle %} class="is-none"{% endif %}><i class="bi bi-truck"></i> {{ r.vehicle.name|default:'車両が未定' }}</span>
+        <span{% if not r.driver %} class="is-none"{% endif %}><i class="bi bi-person"></i> {{ r.driver.name|default:'運転手が未定' }}</span>
+        <span>{{ r.stop_list|length }} 人{% if r.vehicle.capacity %}／{{ r.vehicle.capacity }} 人乗り{% endif %}</span>
+        {% if r.over %}<span class="rt-mark is-over">定員をこえています</span>{% endif %}
+      </span>
+      <a href="{% url 'transport:route_pattern_edit' r.pk %}" class="btn btn-sm btn-outline-secondary rt-edit">直す</a>
+    </div>
+    <ul class="rt-stops">
+      {% for s in r.stop_list %}
+      <li><span class="t">{{ s.time|time:'H:i'|default:'—' }}</span><span class="n">{{ s.beneficiary.full_name }} <small class="text-muted">さん</small>{% if s.place %} <span class="pl">{{ s.place }}</span>{% endif %}</span></li>
+      {% empty %}<li class="text-muted">乗る子が、まだいません。</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% empty %}
+  <div class="rt-empty">{{ weekday_label }}曜の{{ sec.label }}の便は、まだありません。</div>
+  {% endfor %}
+  {% endfor %}
+</div>
+{% endblock %}
