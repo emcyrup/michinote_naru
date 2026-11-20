@@ -13,7 +13,7 @@
 | 開発環境（成） | https://st-naru.ai-labo.cloud/ （Gunicorn 127.0.0.1:8049・DB `naru_app`）。Actions「Deploy (naru)」`target=dev` |
 | 本番環境（成） | https://naru.ai-labo.cloud/ （Gunicorn 127.0.0.1:8049・DB `naru_app_prod`）。Actions「Deploy (naru)」`target=prod`（ブランチ `main` だけ・**依頼者が指示したときだけ**） |
 | 成の環境の置き場所・管理・手順書 | `~/michinotenaru`・Python の環境は成専用の `~/envnaru`。管理は Actions「Manage (naru)」。手順と Secrets の一覧は `docs/DEPLOY_NARU.md` |
-| 保護者向けの別アプリの環境 | `st-naru-family.ai-labo.cloud`／`naru-family.ai-labo.cloud`（ポート 8050）。このリポジトリからは配備しない |
+| 保護者向けの環境（成） | https://st-naru-family.ai-labo.cloud/ ／ https://naru-family.ai-labo.cloud/ （Gunicorn 8050・`~/michinotenarufamily`）。このリポジトリの別のブランチで開発し、「Deploy (naru)」`app=family` で配備。DB と media は職員向けと共用、**migration は main（職員向け）から先に配備** |
 | 試用環境 | https://st-michinote.sample.ai-labo.cloud/ （プロバイダ管理の nginx → Gunicorn 127.0.0.1:8047） |
 | サーバーの置き場所 | `~/michinotehoudei`（DB `michinotesample`。事業所 ID 1「放デイ　デモ」・管理者 `houdeidemo`） |
 | 配備 | Actions「Deploy (houdeidemo)」をブランチ `main` で**手動**実行（テスト → SSH → migrate → 再起動 → healthz）。push では配備されない |

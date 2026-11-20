@@ -25,6 +25,12 @@ on:
         required: true
         default: dev
         options: [dev, prod]
+      app:
+        description: "どちらの置き場所で実行するか（staff＝職員向け／family＝保護者向け。family は status・autostart_*・error_log・login_log だけ）"
+        type: choice
+        required: true
+        default: staff
+        options: [staff, family]
       task:
         description: "実行する作業"
         type: choice
@@ -89,6 +95,7 @@ jobs:
       - name: Run manage.py on the server
         env:
           TARGET: ${{ inputs.target }}
+          APP: ${{ inputs.app }}
           TASK: ${{ inputs.task }}
           FACILITY_NAME: ${{ inputs.facility_name }}
           ADMIN_USERNAME: ${{ inputs.admin_username }}
@@ -100,6 +107,12 @@ jobs:
           REMOTE_APP_DIR: ${{ secrets.NARU_APP_DIR || '~/michinotenaru' }}
           REMOTE_VENV: ${{ secrets.NARU_VENV || '~/envnaru' }}
         run: |
+          if [ "$APP" = "family" ]; then
+            # 保護者向けの置き場所では、起動まわりとログだけ（データの作業・バックアップは DB を共用する職員向けの側で）
+            case "$TASK" in status|autostart_check|autostart_install|error_log|login_log) ;;
+              *) echo "app=family で実行できるのは status・autostart_check・autostart_install・error_log・login_log だけです（ほかは app=staff で）"; exit 1;; esac
+            REMOTE_APP_DIR="${REMOTE_APP_DIR}family"; REMOTE_VENV="${REMOTE_VENV}family"
+          fi
           if [ "$TARGET" = "prod" ]; then
             ADMIN_PASSWORD="$PW_PROD"; SECRET_NAME=NARU_PROD_ADMIN_PASSWORD
             # 本番には見本のデータを入れない・事業所を消さない

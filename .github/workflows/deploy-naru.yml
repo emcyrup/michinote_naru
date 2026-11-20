@@ -5,7 +5,13 @@
 #   置き場所はどちらも ~/michinotenaru。Python の環境は成専用の ~/envnaru（無ければ、サーバーの ~/env の Python から作る。
 #   同じサーバーのほかの事業所の環境 ~/env には pip をかけない）
 #   本番（prod）はブランチ main からだけ配備できる
-#   保護者向けの別アプリ（st-naru-family／naru-family・ポート 8050）は、このワークフローでは配備しない
+#
+# app=family（保護者向け。開発は別のブランチで進める）：
+#   dev ：https://st-naru-family.ai-labo.cloud/ ・prod：https://naru-family.ai-labo.cloud/ → Gunicorn 127.0.0.1:8050
+#   置き場所 ~/michinotenarufamily・Python の環境 ~/envnarufamily（職員向けとは別。ブランチごとに requirements が違ってもよいように）
+#   DB と写真・書類の置き場所（~/michinotenaru/media）は職員向けと共用。DB の形は職員向け（main）の配備が決めるので、
+#   保護者向けの配備では migrate しない（このコードの migration が DB に無ければ止まる → 先に main へ入れて app=staff を配備）
+#   本番はブランチ main か family から
 #
 # アドレス・ポート・DB 名・DB ユーザーは、ここに書いた値で決まる（入力欄は無い：開発と本番の取り違えを防ぐ）。
 # サーバーに .env がもうあるときは、そのアドレスと DB 名が配備先と合っているか確かめ、違えば止める。
@@ -21,11 +27,17 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "配備先（dev＝開発 st-naru.ai-labo.cloud／prod＝本番 naru.ai-labo.cloud。本番はブランチ main から）"
+        description: "配備先（dev＝開発 st-naru….ai-labo.cloud／prod＝本番 naru….ai-labo.cloud。本番はブランチ main から。保護者向けは family からも可）"
         type: choice
         required: true
         default: dev
         options: [dev, prod]
+      app:
+        description: "どちらを配備するか（staff＝職員向け・ポート 8049／family＝保護者向け・ポート 8050）"
+        type: choice
+        required: true
+        default: staff
+        options: [staff, family]
       ref:
         description: "配備するコミット（切り戻しのときに前のコミットの番号を入れる。空なら選んだブランチの最新）"
         type: string
@@ -39,8 +51,8 @@ permissions:
   contents: read
 
 env:
-  DOMAIN: ${{ inputs.target == 'prod' && 'naru.ai-labo.cloud' || 'st-naru.ai-labo.cloud' }}
-  PORT_NUM: "8049"
+  DOMAIN: ${{ format('{0}naru{1}.ai-labo.cloud', inputs.target != 'prod' && 'st-' || '', inputs.app == 'family' && '-family' || '') }}
+  PORT_NUM: ${{ inputs.app == 'family' && '8050' || '8049' }}
   DB_NAME_NEW: ${{ inputs.target == 'prod' && 'naru_app_prod' || 'naru_app' }}
   DB_USER_NEW: ${{ inputs.target == 'prod' && 'naru_runtime_prod' || 'naru_runtime' }}
 
@@ -48,10 +60,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Production is deployed from main only
-        if: inputs.target == 'prod' && github.ref != 'refs/heads/main'
+      - name: Production is deployed from main only (family: main or family)
+        if: inputs.target == 'prod' && github.ref != 'refs/heads/main' && !(inputs.app == 'family' && github.ref == 'refs/heads/family')
         run: |
-          echo "本番（prod）はブランチ main を選んで実行してください（いまは ${{ github.ref_name }}）"; exit 1
+          echo "本番（prod）はブランチ main（保護者向けは main か family）を選んで実行してください"; exit 1
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -108,6 +120,7 @@ jobs:
       - name: Checkout, prepare venv and .env (first time only), migrate, restart gunicorn
         env:
           TARGET: ${{ inputs.target }}
+          APP: ${{ inputs.app }}
           GH_FETCH_TOKEN: ${{ github.token }}   # リポジトリを非公開にしたときもサーバーで取れるように（この実行の間だけ有効・読み取りだけ）
           SHA: ${{ inputs.ref || github.sha }}
           REPO_URL: https://github.com/${{ github.repository }}.git
@@ -124,11 +137,14 @@ jobs:
           [[ "$SHA" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "ref はコミットの番号（7〜40 桁の英数字）で入れてください: $SHA"; exit 1; }
           if [ "$TARGET" = "prod" ]; then DB_PASSWORD_IN="$DB_PASSWORD_PROD"; AI_KEY_IN="$AI_KEY_PROD"; PW_NAME=NARU_PROD_DB_PASSWORD
           else DB_PASSWORD_IN="$DB_PASSWORD_DEV"; AI_KEY_IN="$AI_KEY_DEV"; PW_NAME=NARU_DEV_DB_PASSWORD; fi
+          # 保護者向けは、置き場所と Python の環境を分ける（名前の後ろに family）。写真・書類は職員向けの置き場所を共用、migrate はしない
+          STAFF_APP_DIR="$REMOTE_APP_DIR"; SKIP_MIGRATE=0
+          if [ "$APP" = "family" ]; then REMOTE_APP_DIR="${REMOTE_APP_DIR}family"; REMOTE_VENV="${REMOTE_VENV}family"; SKIP_MIGRATE=1; fi
           # 秘密の値はコマンド行（サーバーのプロセス一覧に出る）に書かず、標準入力の先頭で渡す
           {
             printf 'GH_FETCH_TOKEN=%q\nDB_PASSWORD_IN=%q\nAI_KEY_IN=%q\n' "$GH_FETCH_TOKEN" "$DB_PASSWORD_IN" "$AI_KEY_IN"
-            printf 'SHA=%q\nREPO_URL=%q\nAPP_DIR_IN=%q\nVENV_IN=%q\nBASE_VENV_IN=%q\nDOMAIN_IN=%q\nPORT_IN=%q\nDB_IN=%q\nDB_USER_IN=%q\nPW_NAME=%q\nUPDATE_DB_PASSWORD=%q\n' \
-              "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD"
+            printf 'SHA=%q\nREPO_URL=%q\nAPP_DIR_IN=%q\nVENV_IN=%q\nBASE_VENV_IN=%q\nDOMAIN_IN=%q\nPORT_IN=%q\nDB_IN=%q\nDB_USER_IN=%q\nPW_NAME=%q\nUPDATE_DB_PASSWORD=%q\nSTAFF_DIR_IN=%q\nSKIP_MIGRATE=%q\n' \
+              "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD" "$STAFF_APP_DIR" "$SKIP_MIGRATE"
             cat <<'REMOTE'
             set -euo pipefail
             # リポジトリから取るための合い言葉は、取るときの git にだけ渡す。ファイルにも、あとで起動するアプリの環境にも残さない
@@ -148,6 +164,10 @@ jobs:
             APP_DIR=$(eval echo "$APP_DIR_IN")
             VENV=$(eval echo "$VENV_IN")
             BASE_VENV=$(eval echo "$BASE_VENV_IN")
+            STAFF_DIR=$(eval echo "$STAFF_DIR_IN")
+            if [ "$SKIP_MIGRATE" = "1" ] && [ ! -f "$STAFF_DIR/.env" ]; then
+              echo "ERROR: 職員向け（$STAFF_DIR）がまだ配備されていません。先に app=staff を配備してください（DB の形は職員向けの配備が作ります）"; exit 1
+            fi
 
             # 1) 先に確かめる（何も変えないうちに止める）
             if [ -f "$APP_DIR/.env" ]; then
@@ -185,7 +205,7 @@ jobs:
               chmod 600 .env
               sed -i "s#NARU_DOMAIN_PLACEHOLDER#$DOMAIN_IN#g; s#NARU_DB_NAME_PLACEHOLDER#$DB_IN#; s#NARU_DB_USER_PLACEHOLDER#$DB_USER_IN#" .env
               setenv SECRET_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
-              setenv MEDIA_ROOT "$APP_DIR/media"
+              setenv MEDIA_ROOT "$STAFF_DIR/media"   # 保護者向けも職員向けの置き場所を見る（職員が入れた写真・書類を出すため）
               setenv PORT "$PORT_IN"
               setenv DB_PASSWORD "$DB_PASSWORD_IN"
               if [ -n "$AI_KEY_IN" ]; then setenv ANTHROPIC_API_KEY "$AI_KEY_IN"; echo "  ANTHROPIC_API_KEY: Secrets から入れました"
@@ -200,7 +220,7 @@ jobs:
             fi
 
             # 5) pip → migrate → collectstatic → Gunicorn の再起動 → サーバーの中からの healthz
-            APP_DIR="$APP_DIR" VENV="$VENV" bash deploy/venv-deploy.sh "$SHA"
+            APP_DIR="$APP_DIR" VENV="$VENV" SKIP_MIGRATE="$SKIP_MIGRATE" bash deploy/venv-deploy.sh "$SHA"
           REMOTE
           } | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s
 

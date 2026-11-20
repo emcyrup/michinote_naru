@@ -12,7 +12,21 @@
 | 配備 | Actions「Deploy (naru)」→ `target=dev` | Actions「Deploy (naru)」→ `target=prod`（ブランチ `main` だけ） |
 | 管理 | Actions「Manage (naru)」→ `target=dev` | Actions「Manage (naru)」→ `target=prod` |
 
-- 保護者向けの別アプリ用に、`st-naru-family.ai-labo.cloud`／`naru-family.ai-labo.cloud`（どちらもポート 8050）も用意されています。**このリポジトリからは配備しません**（別アプリができてから）。
+
+保護者向け（このリポジトリの別のブランチで開発する。Deploy (naru) の `app=family`）：
+
+| | 開発（dev） | 本番（prod） |
+|---|---|---|
+| アドレス | https://st-naru-family.ai-labo.cloud/ | https://naru-family.ai-labo.cloud/ |
+| Gunicorn | `127.0.0.1:8050` | `127.0.0.1:8050` |
+| 置き場所／Python の環境 | `~/michinotenarufamily`／`~/envnarufamily` | 同じ |
+| DB・写真や書類の置き場所 | 職員向けと共用（`naru_app`・`~/michinotenaru/media`） | 職員向けと共用（`naru_app_prod`・`~/michinotenaru/media`） |
+| 配備できるブランチ | どれでも | `main` か `family` |
+
+- **DB の形（migration）は職員向け（`main`）の配備が決めます。** 保護者向けの配備は migrate をしません。保護者向けのブランチで migration を足したら、先に `main` に取り込んで `app=staff` を配備してから、`app=family` を配備します（DB に無い migration があると、配備は止まります）。
+- 保護者向けは、職員向けを配備したあとでないと配備できません。
+- 保護者向けのブランチができるまでは、`main` のコード（職員向けと同じ画面）を置いて、アドレスがつながることだけ確かめておきます。
+- Manage (naru) の `app=family` でできるのは `status`・`autostart_check`・`autostart_install`・`error_log`・`login_log` だけです（データの作業は `app=staff` で）。
 - Python の環境は、同じサーバーのほかの事業所と共用の `~/env` を使わず、成専用の `~/envnaru` を使います（無ければ初回の配備で `~/env` の Python から作る）。成の `requirements.txt` を変えても、ほかの事業所に効きません。
 - アドレス・ポート・DB 名・DB ユーザーはワークフローに書いてあり、入力欄はありません（開発と本番の取り違えを防ぐため）。サーバーの `.env` のアドレス・DB 名が配備先と違えば、配備は止まります。
 - 秘密の値（DB パスワード・SSH 鍵・管理者のパスワード・API キー）は GitHub Secrets とサーバーの `.env` だけに置きます。**このリポジトリは公開です。**
@@ -36,6 +50,8 @@
 2. Manage (naru) → `task=autostart_install`（サーバーの再起動のあとに自動で上がる・5 分ごとの見回り・毎日 3:15 のバックアップ）。
 3. Manage (naru) → `task=create_facility`（事業所名「成」・管理者 `naru` が既定。パスワードは Secrets）。作られた事業所の ID は `task=list` で確かめる。
 4. Manage (naru) → `task=family_page_on`・`facility_id=<ID>`（職員のホームをアイコンの並びにし、保護者ページを使う。成の画面にするのに必要）。
+
+保護者向けは、そのあと Deploy (naru) → `app=family`、Manage (naru) → `app=family`・`task=autostart_install`。
 
 2 回目からは 1 だけ。`.env` は上書きしません。
 
