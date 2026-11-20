@@ -169,6 +169,8 @@ jobs:
               "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD" "$STAFF_APP_DIR" "$SKIP_MIGRATE"
             cat <<'REMOTE'
             set -euo pipefail
+            # 公開のログにサーバーのホームのパス（SSH のユーザー名が入る）を出さない：出力の中のホームを ~ に置き換える
+            exec > >(sed -u "s#$HOME#~#g") 2>&1
             # リポジトリから取るための合い言葉は、取るときの git にだけ渡す。ファイルにも、あとで起動するアプリの環境にも残さない
             gitauth() {
               if [ -n "${GH_FETCH_TOKEN:-}" ]; then

@@ -165,8 +165,11 @@ jobs:
               "$TASK" "$FACILITY_NAME" "$ADMIN_USERNAME" "$ADMIN_PASSWORD" "$WITH_DEMO" "$FACILITY_ID" "$COPY_FROM" "$REMOTE_APP_DIR" "$REMOTE_VENV"
             cat <<'REMOTE'
             set -euo pipefail
+            # 公開のログにサーバーのホームのパス（SSH のユーザー名が入る）を出さない：出力の中のホームを ~ に置き換える
+            exec > >(sed -u "s#$HOME#~#g") 2>&1
             export ADMIN_USERNAME ADMIN_PASSWORD
             APP_DIR=$(eval echo "$APP_DIR_IN"); VENV=$(eval echo "$VENV_IN")
+            [ -f "$VENV/bin/activate" ] || { echo "ERROR: この環境はまだ配備されていません。先に Deploy (naru) を実行してください"; exit 1; }
             # shellcheck disable=SC1091
             source "$VENV/bin/activate"
             cd "$APP_DIR"
