@@ -310,7 +310,17 @@ if extra:
     print('WARNING: DB に適用ずみで、このコードに無い migration があります（新しいコードの変更が DB に残っています）:')
     [print('  ', app, name) for app, name in extra]
 " || true
-python manage.py migrate --noinput
+if [ "${SKIP_MIGRATE:-}" = "1" ]; then
+  # 同じ DB を別の clone（職員向け）と共用する環境：DB の形は職員向けの配備が決めるので、ここでは migrate しない。
+  # このコードの migration が DB にまだ無ければ止める（先に main へ入れて、職員向けを配備する）
+  python manage.py migrate --check >/dev/null 2>&1 || {
+    echo "ERROR: このコードの migration のうち、DB にまだ適用されていないものがあります。先に main に取り込み、職員向け（app=staff）を配備してください:"
+    python manage.py showmigrations --plan 2>/dev/null | grep -F '[ ]' | head -n 20 || true
+    exit 1; }
+  echo "migrate: しません（DB は職員向けの配備と共用）"
+else
+  python manage.py migrate --noinput
+fi
 python manage.py collectstatic --noinput --clear >/dev/null
 python manage.py check --deploy --fail-level ERROR
 
