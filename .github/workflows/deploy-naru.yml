@@ -1,0 +1,214 @@
+# =============================================
+# 事業所「成」（職員向け）を、開発（dev）か本番（prod）の環境へ配備する。Actions から手動で実行する（push では配備されない）
+#   dev ：https://st-naru.ai-labo.cloud/ → プロバイダ管理の nginx → Gunicorn 127.0.0.1:8049、DB naru_app（ユーザー naru_runtime）
+#   prod：https://naru.ai-labo.cloud/    → プロバイダ管理の nginx → Gunicorn 127.0.0.1:8049、DB naru_app_prod（ユーザー naru_runtime_prod）
+#   置き場所はどちらも ~/michinotenaru。Python の環境は成専用の ~/envnaru（無ければ、サーバーの ~/env の Python から作る。
+#   同じサーバーのほかの事業所の環境 ~/env には pip をかけない）
+#   本番（prod）はブランチ main からだけ配備できる
+#   保護者向けの別アプリ（st-naru-family／naru-family・ポート 8050）は、このワークフローでは配備しない
+#
+# アドレス・ポート・DB 名・DB ユーザーは、ここに書いた値で決まる（入力欄は無い：開発と本番の取り違えを防ぐ）。
+# サーバーに .env がもうあるときは、そのアドレスと DB 名が配備先と合っているか確かめ、違えば止める。
+#
+# 初回：サーバーに ~/michinotenaru/.env が無ければ deploy/.env.naru.example から作る。
+#   SECRET_KEY はサーバー上で生成、DB パスワードは Secrets（NARU_DEV_DB_PASSWORD／NARU_PROD_DB_PASSWORD）から入れる（値はログに出ない）。
+#   以後の配備では .env を上書きしない（DB パスワードを変えたときだけ、入力 update_db_password に印を付けて実行する）
+# 手順は docs/DEPLOY_NARU.md
+# =============================================
+name: Deploy (naru)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "配備先（dev＝開発 st-naru.ai-labo.cloud／prod＝本番 naru.ai-labo.cloud。本番はブランチ main から）"
+        type: choice
+        required: true
+        default: dev
+        options: [dev, prod]
+      ref:
+        description: "配備するコミット（切り戻しのときに前のコミットの番号を入れる。空なら選んだブランチの最新）"
+        type: string
+        default: ""
+      update_db_password:
+        description: "サーバーの .env の DB パスワードを Secrets の値で書き直す（パスワードを変えたときだけ）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  DOMAIN: ${{ inputs.target == 'prod' && 'naru.ai-labo.cloud' || 'st-naru.ai-labo.cloud' }}
+  PORT_NUM: "8049"
+  DB_NAME_NEW: ${{ inputs.target == 'prod' && 'naru_app_prod' || 'naru_app' }}
+  DB_USER_NEW: ${{ inputs.target == 'prod' && 'naru_runtime_prod' || 'naru_runtime' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Production is deployed from main only
+        if: inputs.target == 'prod' && github.ref != 'refs/heads/main'
+        run: |
+          echo "本番（prod）はブランチ main を選んで実行してください（いまは ${{ github.ref_name }}）"; exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
+      - run: pip install -r requirements.txt
+      - name: Django check & tests
+        env:
+          SECRET_KEY: ci-only-secret-key
+          DEBUG: "True"
+          DJANGO_ALLOWED_HOSTS: localhost
+        run: |
+          python manage.py check
+          python manage.py test --noinput
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      # 同じ環境への配備・管理を同時に動かさない
+      group: deploy-naru-${{ inputs.target }}
+      cancel-in-progress: false
+    steps:
+      # 配備先のサーバーを選ぶ。本番は NARU_PROD_* だけ（ほかの Secrets で代えない：取り違えを防ぐ）
+      - name: Set up SSH
+        env:
+          TARGET: ${{ inputs.target }}
+          DEV_HOST: ${{ secrets.NARU_DEV_DEPLOY_HOST || secrets.HOUDEIDEMO_DEPLOY_HOST || secrets.DEV_DEPLOY_HOST }}
+          DEV_USER: ${{ secrets.NARU_DEV_DEPLOY_USER || secrets.HOUDEIDEMO_DEPLOY_USER || secrets.DEV_DEPLOY_USER }}
+          DEV_KEY: ${{ secrets.NARU_DEV_DEPLOY_SSH_KEY || secrets.HOUDEIDEMO_DEPLOY_SSH_KEY || secrets.DEV_DEPLOY_SSH_KEY }}
+          DEV_PORT: ${{ secrets.NARU_DEV_DEPLOY_SSH_PORT || secrets.HOUDEIDEMO_DEPLOY_SSH_PORT || secrets.DEV_DEPLOY_SSH_PORT || '22' }}
+          PROD_HOST: ${{ secrets.NARU_PROD_DEPLOY_HOST }}
+          PROD_USER: ${{ secrets.NARU_PROD_DEPLOY_USER }}
+          PROD_KEY: ${{ secrets.NARU_PROD_DEPLOY_SSH_KEY }}
+          PROD_PORT: ${{ secrets.NARU_PROD_DEPLOY_SSH_PORT || '22' }}
+        run: |
+          if [ "$TARGET" = "prod" ]; then H="$PROD_HOST"; U="$PROD_USER"; K="$PROD_KEY"; P="$PROD_PORT"; N="NARU_PROD_DEPLOY_HOST・NARU_PROD_DEPLOY_USER・NARU_PROD_DEPLOY_SSH_KEY"
+          else H="$DEV_HOST"; U="$DEV_USER"; K="$DEV_KEY"; P="$DEV_PORT"; N="NARU_DEV_DEPLOY_HOST・NARU_DEV_DEPLOY_USER・NARU_DEV_DEPLOY_SSH_KEY"; fi
+          if [ -z "$H" ] || [ -z "$U" ] || [ -z "$K" ]; then
+            echo "SSH の Secrets（$N）が未登録です（docs/DEPLOY_NARU.md の「GitHub Secrets」）"; exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$P" -H "$H" >> ~/.ssh/known_hosts 2>/dev/null
+          { echo "SSH_HOST=$H"; echo "SSH_USER=$U"; echo "SSH_PORT=$P"; } >> "$GITHUB_ENV"
+
+      - name: Checkout, prepare venv and .env (first time only), migrate, restart gunicorn
+        env:
+          TARGET: ${{ inputs.target }}
+          GH_FETCH_TOKEN: ${{ github.token }}   # リポジトリを非公開にしたときもサーバーで取れるように（この実行の間だけ有効・読み取りだけ）
+          SHA: ${{ inputs.ref || github.sha }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+          REMOTE_APP_DIR: ${{ secrets.NARU_APP_DIR || '~/michinotenaru' }}
+          REMOTE_VENV: ${{ secrets.NARU_VENV || '~/envnaru' }}
+          BASE_VENV: ${{ secrets.NARU_BASE_VENV || '~/env' }}
+          DB_PASSWORD_DEV: ${{ secrets.NARU_DEV_DB_PASSWORD }}
+          DB_PASSWORD_PROD: ${{ secrets.NARU_PROD_DB_PASSWORD }}
+          AI_KEY_DEV: ${{ secrets.NARU_DEV_ANTHROPIC_API_KEY || secrets.NARU_ANTHROPIC_API_KEY }}
+          AI_KEY_PROD: ${{ secrets.NARU_PROD_ANTHROPIC_API_KEY || secrets.NARU_ANTHROPIC_API_KEY }}
+          UPDATE_DB_PASSWORD: ${{ inputs.update_db_password }}
+        run: |
+          # 切り戻しで入れるのはコミットの番号だけ（英数字 7〜40 字）。ほかの文字はサーバーのコマンドに渡さない
+          [[ "$SHA" =~ ^[0-9a-fA-F]{7,40}$ ]] || { echo "ref はコミットの番号（7〜40 桁の英数字）で入れてください: $SHA"; exit 1; }
+          if [ "$TARGET" = "prod" ]; then DB_PASSWORD_IN="$DB_PASSWORD_PROD"; AI_KEY_IN="$AI_KEY_PROD"; PW_NAME=NARU_PROD_DB_PASSWORD
+          else DB_PASSWORD_IN="$DB_PASSWORD_DEV"; AI_KEY_IN="$AI_KEY_DEV"; PW_NAME=NARU_DEV_DB_PASSWORD; fi
+          # 秘密の値はコマンド行（サーバーのプロセス一覧に出る）に書かず、標準入力の先頭で渡す
+          {
+            printf 'GH_FETCH_TOKEN=%q\nDB_PASSWORD_IN=%q\nAI_KEY_IN=%q\n' "$GH_FETCH_TOKEN" "$DB_PASSWORD_IN" "$AI_KEY_IN"
+            printf 'SHA=%q\nREPO_URL=%q\nAPP_DIR_IN=%q\nVENV_IN=%q\nBASE_VENV_IN=%q\nDOMAIN_IN=%q\nPORT_IN=%q\nDB_IN=%q\nDB_USER_IN=%q\nPW_NAME=%q\nUPDATE_DB_PASSWORD=%q\n' \
+              "$SHA" "$REPO_URL" "$REMOTE_APP_DIR" "$REMOTE_VENV" "$BASE_VENV" "$DOMAIN" "$PORT_NUM" "$DB_NAME_NEW" "$DB_USER_NEW" "$PW_NAME" "$UPDATE_DB_PASSWORD"
+            cat <<'REMOTE'
+            set -euo pipefail
+            # リポジトリから取るための合い言葉は、取るときの git にだけ渡す。ファイルにも、あとで起動するアプリの環境にも残さない
+            gitauth() {
+              if [ -n "${GH_FETCH_TOKEN:-}" ]; then
+                GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+                  GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_FETCH_TOKEN" | base64 | tr -d '\n')" git "$@"
+              else
+                GIT_TERMINAL_PROMPT=0 git "$@"
+              fi
+            }
+            # .env の 1 行を書き換える（無ければ足す）。値は環境変数で渡すので、# や $ や & があっても壊れず、コマンド行にも出ない
+            setenv() {
+              K="$1" V="$2" python3 -c 'import os, re; k = os.environ["K"]; line = k + "=" + os.environ["V"]; s = open(".env", encoding="utf-8").read(); s, n = re.subn(r"(?m)^#?" + re.escape(k) + r"=.*$", lambda m: line, s, count=1); s = s if n else s.rstrip("\n") + "\n" + line + "\n"; open(".env", "w", encoding="utf-8").write(s)'
+            }
+            getenv() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | tr -d '[:space:]"' || true; }
+            APP_DIR=$(eval echo "$APP_DIR_IN")
+            VENV=$(eval echo "$VENV_IN")
+            BASE_VENV=$(eval echo "$BASE_VENV_IN")
+
+            # 1) 先に確かめる（何も変えないうちに止める）
+            if [ -f "$APP_DIR/.env" ]; then
+              cd "$APP_DIR"
+              # ほかの環境の置き場所に配備しない：.env のアドレスと DB 名が、選んだ配備先と同じであること
+              cur_host=$(getenv DJANGO_ALLOWED_HOSTS | cut -d, -f1); cur_db=$(getenv DB_NAME)
+              if [ "$cur_host" != "$DOMAIN_IN" ] || [ "$cur_db" != "$DB_IN" ]; then
+                echo "ERROR: $APP_DIR/.env は別の環境のものです（アドレス $cur_host・DB $cur_db。配備先は $DOMAIN_IN・$DB_IN）。配備を止めました"; exit 1
+              fi
+            elif [ -z "$DB_PASSWORD_IN" ]; then
+              echo "ERROR: Secrets の $PW_NAME が未登録です。初回の配備には DB のパスワードが要ります（docs/DEPLOY_NARU.md の「GitHub Secrets」）"; exit 1
+            fi
+
+            # 2) コードを取る
+            if [ ! -d "$APP_DIR/.git" ]; then
+              gitauth clone --quiet "$REPO_URL" "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+            git remote set-url origin "$REPO_URL"
+            gitauth fetch --quiet origin
+            git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ERROR: コミット $SHA がこのリポジトリにありません"; exit 1; }
+            git checkout --quiet "$SHA" -- deploy/venv-deploy.sh deploy/.env.naru.example
+
+            # 3) 成専用の Python の環境（ほかの事業所と共用の ~/env には pip をかけない）
+            if [ ! -f "$VENV/bin/activate" ]; then
+              py=python3; [ -x "$BASE_VENV/bin/python" ] && py=$(readlink -f "$BASE_VENV/bin/python")
+              echo "venv: $VENV が無いので作ります（$("$py" --version 2>&1)）"
+              "$py" -m venv "$VENV" || { echo "ERROR: venv を作れません。プロバイダに Python 3.12 以上の venv（$VENV）を依頼してください"; exit 1; }
+            fi
+
+            # 4) .env（初回だけ作る）
+            if [ ! -f .env ]; then
+              echo ".env が無いので雛形から作ります（SECRET_KEY は生成。DB パスワードは Secrets から。値は表示しない）"
+              ( umask 077; cp deploy/.env.naru.example .env )
+              chmod 600 .env
+              sed -i "s#NARU_DOMAIN_PLACEHOLDER#$DOMAIN_IN#g; s#NARU_DB_NAME_PLACEHOLDER#$DB_IN#; s#NARU_DB_USER_PLACEHOLDER#$DB_USER_IN#" .env
+              setenv SECRET_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
+              setenv MEDIA_ROOT "$APP_DIR/media"
+              setenv PORT "$PORT_IN"
+              setenv DB_PASSWORD "$DB_PASSWORD_IN"
+              if [ -n "$AI_KEY_IN" ]; then setenv ANTHROPIC_API_KEY "$AI_KEY_IN"; echo "  ANTHROPIC_API_KEY: Secrets から入れました"
+              else echo "  注意: Anthropic のキー（Secrets NARU_ANTHROPIC_API_KEY）が無いので、AI の機能（日誌の下書きなど）は使えません。登録してからもう一度配備すると入ります"; fi
+            else
+              if [ "$UPDATE_DB_PASSWORD" = "true" ]; then
+                [ -n "$DB_PASSWORD_IN" ] || { echo "ERROR: Secrets の $PW_NAME が空です"; exit 1; }
+                setenv DB_PASSWORD "$DB_PASSWORD_IN"; echo ".env の DB_PASSWORD を Secrets の値で書き直しました"
+              fi
+              # あとから Secrets に入れた Anthropic のキーは、.env が空のときだけ入れる
+              if [ -n "$AI_KEY_IN" ] && [ -z "$(getenv ANTHROPIC_API_KEY)" ]; then setenv ANTHROPIC_API_KEY "$AI_KEY_IN"; echo ".env に ANTHROPIC_API_KEY を入れました"; fi
+            fi
+
+            # 5) pip → migrate → collectstatic → Gunicorn の再起動 → サーバーの中からの healthz
+            APP_DIR="$APP_DIR" VENV="$VENV" bash deploy/venv-deploy.sh "$SHA"
+          REMOTE
+          } | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s
+
+      - name: Health check (public URL)
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$DOMAIN/healthz/" || true)
+            case "$code" in 200) echo "healthy ($code) https://$DOMAIN/"; exit 0;; esac
+            echo "waiting... ($code)"; sleep 5
+          done
+          echo "health check failed（サーバーの中では動いています。nginx の中継先（127.0.0.1:$PORT_NUM）をプロバイダに確かめてください）"; exit 1

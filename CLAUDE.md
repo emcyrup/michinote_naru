@@ -10,6 +10,10 @@
 
 | 項目 | 内容 |
 |---|---|
+| 開発環境（成） | https://st-naru.ai-labo.cloud/ （Gunicorn 127.0.0.1:8049・DB `naru_app`）。Actions「Deploy (naru)」`target=dev` |
+| 本番環境（成） | https://naru.ai-labo.cloud/ （Gunicorn 127.0.0.1:8049・DB `naru_app_prod`）。Actions「Deploy (naru)」`target=prod`（ブランチ `main` だけ・**依頼者が指示したときだけ**） |
+| 成の環境の置き場所・管理・手順書 | `~/michinotenaru`・Python の環境は成専用の `~/envnaru`。管理は Actions「Manage (naru)」。手順と Secrets の一覧は `docs/DEPLOY_NARU.md` |
+| 保護者向けの別アプリの環境 | `st-naru-family.ai-labo.cloud`／`naru-family.ai-labo.cloud`（ポート 8050）。このリポジトリからは配備しない |
 | 試用環境 | https://st-michinote.sample.ai-labo.cloud/ （プロバイダ管理の nginx → Gunicorn 127.0.0.1:8047） |
 | サーバーの置き場所 | `~/michinotehoudei`（DB `michinotesample`。事業所 ID 1「放デイ　デモ」・管理者 `houdeidemo`） |
 | 配備 | Actions「Deploy (houdeidemo)」をブランチ `main` で**手動**実行（テスト → SSH → migrate → 再起動 → healthz）。push では配備されない |
@@ -17,6 +21,7 @@
 | 手順書 | `docs/DEPLOY_AWS_HOUDEIDEMO.md` |
 
 - 必要な Secrets（このリポジトリに登録する）：`HOUDEIDEMO_DEPLOY_HOST`・`HOUDEIDEMO_DEPLOY_USER`・`HOUDEIDEMO_DEPLOY_SSH_KEY`（開発環境のサーバーと同じ値）、`HOUDEIDEMO_ADMIN_PASSWORD`（管理者のパスワードを設定するときだけ）。
+- 以下は試用環境（houdeidemo）の話です。成の開発・本番（Deploy (naru)）は専用の `~/envnaru` を使うので当てはまりません。
 - サーバーの Python の環境（`~/env`）は、同じサーバーのほかの環境と**共用**です。`requirements.txt` の版を変えると、ほかの環境にも効きます。変えるときは依頼者に確かめるか、Secrets `HOUDEIDEMO_VENV` で別の環境に分けます。
 - 元のリポジトリの配備と同じ時刻に流さないでください（同じ環境に同時に pip が走るのを避けるため）。
 - 最初の配備で、サーバーの取得元（origin）がこのリポジトリに切り替わります。

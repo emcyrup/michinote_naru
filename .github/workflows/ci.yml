@@ -1,4 +1,4 @@
-# Pull Request と push でテストを回す（デプロイはしない。配備は Actions「Deploy (houdeidemo)」を手で）
+# Pull Request と push でテストを回す（デプロイはしない。配備は Actions「Deploy (naru)」「Deploy (houdeidemo)」を手で）
 name: CI
 
 on:
