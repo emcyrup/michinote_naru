@@ -64,6 +64,25 @@ class PlanListView(LoginRequiredMixin, View):
         })
 
 
+class PlanRenewalView(LoginRequiredMixin, View):
+    """
+    個別支援計画（更新の一覧。アイコンのホームを使う事業所だけ）：全員の名前を、更新月の子は赤・来月更新の子はオレンジ・ほかは黒で。
+    名前を押すと、その子の計画（作成の流れの順）へ
+    """
+
+    def get(self, request):
+        from django.http import Http404
+
+        from . import renewal
+        facility = request.user.facility
+        if facility is None or not facility.home_icons:
+            raise Http404
+        rows = renewal.renewal_rows(facility)
+        return render(request, 'support_plans/renewal.html', {
+            'rows': rows, 'counts': renewal.renewal_counts(rows), 'today': date.today(),
+        })
+
+
 # =============================================
 # 新規作成
 # =============================================

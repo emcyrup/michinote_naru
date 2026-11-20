@@ -254,3 +254,86 @@ class UseRequest(models.Model):
 
     def __str__(self):
         return f'{self.date} {self.beneficiary}（{self.get_via_display()}）'
+
+
+class NoticeGroup(models.Model):
+    """お知らせの配信先のグループ（職員が自由に作る。例：低学年・土曜の利用・送迎あり）"""
+    NAME_MAX = 30
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='notice_groups')
+    name = models.CharField(max_length=NAME_MAX, verbose_name='グループの名前')
+    members = models.ManyToManyField(Beneficiary, blank=True, related_name='notice_groups', verbose_name='入っている子')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'お知らせのグループ'
+        verbose_name_plural = 'お知らせのグループ'
+        ordering = ['name', 'pk']
+        constraints = [models.UniqueConstraint(fields=['facility', 'name'], name='notice_group_name')]
+
+    def __str__(self):
+        return self.name
+
+
+class Notice(models.Model):
+    """
+    お知らせ（事業所から保護者へ）。職員が、題・配信先・本文を書いて「送信」すると、宛先の子の保護者ページ「お知らせ」に出る。
+    下書きのあいだは保護者には見えない。宛先は送信したときに NoticeRecipient に控える（あとでグループを変えても、送った相手は変わらない）。
+    """
+    STATUS_DRAFT = 'draft'
+    STATUS_SENT = 'sent'
+    STATUS_CHOICES = [(STATUS_DRAFT, '下書き'), (STATUS_SENT, '送信済み')]
+    TARGET_ALL = 'all'
+    TARGET_GROUP = 'group'
+    TARGET_CHILDREN = 'children'
+    TARGET_CHOICES = [(TARGET_ALL, '全員'), (TARGET_GROUP, 'グループ'), (TARGET_CHILDREN, '児童個別')]
+    TITLE_MAX = 60
+    BODY_MAX = 3000
+
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='notices')
+    title = models.CharField(max_length=TITLE_MAX, blank=True, verbose_name='タイトル')
+    body = models.TextField(blank=True, verbose_name='本文')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT, verbose_name='状態')
+    target_kind = models.CharField(max_length=10, choices=TARGET_CHOICES, default=TARGET_ALL, verbose_name='配信先')
+    group = models.ForeignKey(NoticeGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='notices',
+                              verbose_name='配信先のグループ')
+    children = models.ManyToManyField(Beneficiary, blank=True, related_name='notice_drafts', verbose_name='配信先の子（児童個別）')
+    target_label = models.CharField(max_length=120, blank=True, verbose_name='配信先（送信したときの控え）')
+    line_count = models.PositiveIntegerField(default=0, verbose_name='LINE で知らせた人数')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+', verbose_name='書いた職員')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name='送信した日時')
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='送信した職員')
+
+    class Meta:
+        verbose_name = 'お知らせ'
+        verbose_name_plural = 'お知らせ'
+        ordering = ['-sent_at', '-updated_at', '-pk']
+        indexes = [models.Index(fields=['facility', 'status'], name='notice_facility_status')]
+
+    def __str__(self):
+        return f'{self.title or "（題なし）"}（{self.get_status_display()}）'
+
+    @property
+    def is_sent(self):
+        return self.status == self.STATUS_SENT
+
+
+class NoticeRecipient(models.Model):
+    """お知らせの宛先（子どもごと）。保護者がお知らせの画面を開くと read_at が入る"""
+    notice = models.ForeignKey(Notice, on_delete=models.CASCADE, related_name='recipients')
+    beneficiary = models.ForeignKey(Beneficiary, on_delete=models.CASCADE, related_name='notices_received', verbose_name='利用者')
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name='保護者が読んだ日時')
+    read_by = models.CharField(max_length=120, blank=True, verbose_name='読んだ保護者')
+
+    class Meta:
+        verbose_name = 'お知らせの宛先'
+        verbose_name_plural = 'お知らせの宛先'
+        constraints = [models.UniqueConstraint(fields=['notice', 'beneficiary'], name='notice_recipient_once')]
+        indexes = [models.Index(fields=['beneficiary', 'read_at'], name='notice_recipient_unread')]
+
+    def __str__(self):
+        return f'{self.notice} → {self.beneficiary}'

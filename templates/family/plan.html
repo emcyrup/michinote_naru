@@ -1,0 +1,57 @@
+{% extends 'family/base.html' %}
+{% block title %}個別支援計画 — {{ child.full_name }} さん{% endblock %}
+{% block extra_css %}
+<style>
+  .pl-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 16px; }
+  .pl-card + .pl-card { margin-top: 14px; }
+  .pl-name { font-size: 1.15rem; font-weight: 700; }
+  .pl-state { display: inline-block; font-size: .75rem; font-weight: 700; border-radius: 999px; padding: 1px 10px; background: #e3f3e6; color: #1e6b33; }
+  .pl-state.is-before { background: #fff3d6; color: #8a5a00; }
+  .pl-meta { font-size: .88rem; color: #555; margin-top: 6px; }
+  .pl-h { font-size: .9rem; font-weight: 700; color: var(--brand); border-left: 4px solid var(--brand); padding-left: 8px; margin: 18px 0 6px; }
+  .pl-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; }
+  .pl-goal { border: 1px solid #e6e1d8; border-radius: 12px; padding: 12px; margin-top: 8px; }
+  .pl-goal-kind { font-size: .75rem; font-weight: 700; color: #555; background: #f1eee8; border-radius: 999px; padding: 1px 9px; }
+  .pl-goal-text { font-weight: 700; font-size: 1.05rem; margin: 6px 0 4px; }
+  .pl-goal dl { margin: 0; }
+  .pl-goal dt { font-size: .78rem; color: #777; font-weight: 400; margin-top: 8px; }
+  .pl-goal dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'family:home' %}" aria-label="もどる"><i class="bi bi-chevron-left"></i></a>個別支援計画</div>
+
+{% for c in cards %}
+<section class="pl-card">
+  <div class="pl-name">{{ c.plan.title }}</div>
+  <div class="mt-1">{% if c.agreed %}<span class="pl-state">いまの計画</span>{% else %}<span class="pl-state is-before">これからご説明する計画（同意の前）</span>{% endif %}</div>
+  <div class="pl-meta">
+    {% if c.draft.period_start and c.draft.period_end %}計画期間：{{ c.draft.period_start|date:'Y年n月j日' }} 〜 {{ c.draft.period_end|date:'Y年n月j日' }}<br>{% endif %}
+    {% if c.plan.manager %}児童発達支援管理責任者：{{ c.plan.manager }}{% endif %}
+  </div>
+
+  {% for cell in c.cells %}
+  <div class="pl-h">{{ cell.label }}</div>
+  <div class="pl-text">{{ cell.value }}</div>
+  {% endfor %}
+
+  {% if c.goals %}
+  <div class="pl-h">目標と支援内容</div>
+  {% for g in c.goals %}
+  <div class="pl-goal">
+    <span class="pl-goal-kind">{{ g.kind }}</span>
+    <div class="pl-goal-text">{{ g.goal.content }}</div>
+    <dl>
+      {% for p in g.parts %}<dt>{{ p.label }}</dt><dd>{{ p.value }}</dd>{% endfor %}
+      {% if g.show_date %}<dt>達成時期</dt><dd>{{ g.goal.target_date|date:'Y年n月j日' }}</dd>{% endif %}
+    </dl>
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+{% empty %}
+<div class="fm-card text-center text-muted">{{ child.full_name }} さんの、確認できる個別支援計画は、まだありません。<div class="fm-meta mt-2">計画ができましたら、こちらでご覧いただけます。</div></div>
+{% endfor %}
+
+{% if cards %}<div class="fm-meta mt-3 text-center">内容についてのご質問は、{{ facility.name }} までお問い合わせください。</div>{% endif %}
+{% endblock %}

@@ -368,6 +368,12 @@
         </a>
       </li>
       <li>
+        <a class="sidebar-nav-item {% block nav_family_notice %}{% endblock %}" href="{% url 'family:staff_notice' %}">
+          <i class="bi bi-envelope"></i>
+          <span>お知らせ</span>
+        </a>
+      </li>
+      <li>
         <a class="sidebar-nav-item {% block nav_family_inbox %}{% endblock %}" href="{% url 'family:staff_inbox' %}">
           <i class="bi bi-telephone"></i>
           <span>保護者からの連絡</span>

@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block title %}お知らせを書く — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}お知らせ{% endblock %}
+{% block nav_family_notice %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .ne-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; }
+  .ne-kinds { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ne-kinds label { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 12px; border: 1px solid #cfc8bb; border-radius: 12px; cursor: pointer; margin: 0; font-weight: 700; white-space: nowrap; }
+  .ne-kinds input { width: 20px; height: 20px; }
+  .ne-kinds label:has(input:checked) { border-color: var(--color-primary, #4e7ea8); background: var(--color-primary-bg, #eef3f8); }
+  .ne-box { border: 1px solid #e6e1d8; border-radius: 12px; padding: 10px; margin-top: 10px; background: #fbfaf7; }
+  .ne-kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; max-height: 280px; overflow: auto; }
+  .ne-kids label { display: flex; align-items: center; gap: 8px; padding: 6px 4px; margin: 0; cursor: pointer; }
+  .ne-kids input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .ne-btns { display: flex; gap: 8px; margin-top: 14px; }
+  .ne-btns .btn { flex: 1 1 0; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .ne-btns { padding-right: 72px; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_notice' %}" class="small"><i class="bi bi-chevron-left"></i> お知らせの一覧へ</a></div>
+  {% if problems %}<div class="alert alert-danger">{% for p in problems %}<div>{{ p }}</div>{% endfor %}</div>{% endif %}
+
+  <form method="post" class="ne-card" id="ne-form">
+    {% csrf_token %}
+    <label for="ne-title" class="form-label fw-bold">タイトル</label>
+    <input type="text" name="title" id="ne-title" class="form-control mb-3" value="{{ v.title }}" maxlength="{{ title_max }}" placeholder="例：12 月の行事について">
+
+    <div class="fw-bold mb-2">配信先</div>
+    <div class="ne-kinds">
+      <label><input type="radio" name="target_kind" value="all"{% if v.target_kind == 'all' %} checked{% endif %}> 全員（{{ all_count }} 人）</label>
+      <label><input type="radio" name="target_kind" value="group"{% if v.target_kind == 'group' %} checked{% endif %}> グループ</label>
+      <label><input type="radio" name="target_kind" value="children"{% if v.target_kind == 'children' %} checked{% endif %}> 児童個別</label>
+    </div>
+    <div class="ne-box" data-kind="group">
+      {% if groups %}
+      <select name="group" class="form-select" aria-label="配信先のグループ">
+        <option value="">— グループを選ぶ —</option>
+        {% for g in groups %}<option value="{{ g.pk }}"{% if v.group and v.group.pk == g.pk %} selected{% endif %}>{{ g.name }}（{{ g.members.all|length }} 人）</option>{% endfor %}
+      </select>
+      {% else %}<div class="small text-muted">グループは、まだありません。</div>{% endif %}
+      <div class="small mt-2"><a href="{% url 'family:staff_notice_groups' %}">グループを作る・直す</a>（書きかけの内容は、先に「下書き保存」してください）</div>
+    </div>
+    <div class="ne-box" data-kind="children">
+      <div class="small text-muted mb-1">送る子にチェックを付けます。<span id="ne-count"></span></div>
+      <div class="ne-kids">
+        {% for b in children %}<label><input type="checkbox" name="children" value="{{ b.pk }}"{% if b.pk in picked %} checked{% endif %}> {{ b.full_name }}</label>{% endfor %}
+      </div>
+    </div>
+
+    <label for="ne-body" class="form-label fw-bold mt-3">本文</label>
+    <textarea name="body" id="ne-body" class="form-control" rows="10" maxlength="{{ body_max }}" placeholder="お知らせの内容を書きます。">{{ v.body }}</textarea>
+
+    {% if line_on %}
+    <label class="d-flex align-items-start gap-2 mt-3" style="cursor:pointer;">
+      <input type="checkbox" name="notify_line" value="1" checked style="width:22px;height:22px;flex:0 0 auto;margin-top:2px;">
+      <span>送信したら、LINE でも知らせる<br><small class="text-muted">宛先の保護者へ「お知らせが届きました」とタイトル・リンクを 1 通ずつ送ります（本文は LINE に流しません）。</small></span>
+    </label>
+    {% endif %}
+
+    <div class="ne-btns">
+      <button type="submit" name="action" value="draft" class="btn btn-outline-secondary" id="ne-draft">下書き保存</button>
+      <button type="submit" name="action" value="send" class="btn btn-primary" id="ne-send" onclick="return confirm('このお知らせを送信します。送信したあとは書き換えられません。よろしいですか？');">送信</button>
+    </div>
+  </form>
+
+  {% if notice %}
+  <form method="post" class="text-end mt-2">{% csrf_token %}
+    <button type="submit" name="action" value="delete" class="btn btn-sm btn-link text-danger" onclick="return confirm('この下書きを消します。よろしいですか？');">この下書きを消す</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  var form = document.getElementById('ne-form');
+  var boxes = [].slice.call(form.querySelectorAll('.ne-box'));
+  var kids = [].slice.call(form.querySelectorAll('input[name=children]'));
+  var count = document.getElementById('ne-count');
+  function refresh() {
+    var kind = (form.querySelector('input[name=target_kind]:checked') || {}).value;
+    boxes.forEach(function (b) { b.hidden = b.getAttribute('data-kind') !== kind; });
+    var n = kids.filter(function (k) { return k.checked; }).length;
+    count.textContent = n ? '（' + n + ' 人を選択中）' : '';
+  }
+  form.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
+{% endblock %}

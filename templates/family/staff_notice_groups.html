@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}お知らせのグループ — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}お知らせのグループ{% endblock %}
+{% block nav_family_notice %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .ng-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; }
+  .ng-kids { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; max-height: 320px; overflow: auto; border: 1px solid #e6e1d8; border-radius: 12px; padding: 8px; background: #fbfaf7; }
+  .ng-kids label { display: flex; align-items: center; gap: 8px; padding: 6px 4px; margin: 0; cursor: pointer; }
+  .ng-kids input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .ng-row { flex-direction: column; align-items: stretch; gap: 2px; position: relative; padding-right: 38px; }
+  .ng-row > .bi-chevron-right { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); }
+  .ng-names { font-size: .82rem; color: #666; overflow-wrap: anywhere; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_notice' %}" class="small"><i class="bi bi-chevron-left"></i> お知らせの一覧へ</a></div>
+  {% if problem %}<div class="alert alert-danger">{{ problem }}</div>{% endif %}
+
+  {% if not group %}
+  <div class="daylist-head">いまあるグループ</div>
+  {% if groups %}
+  <ul class="daylist mb-3">
+    {% for g in groups %}
+    <li><a class="dayitem ng-row" href="{% url 'family:staff_notice_group' g.pk %}">
+      <span class="dayitem-name">{{ g.name }} <small>（{{ g.members.all|length }} 人）</small></span>
+      <span class="ng-names">{% for b in g.members.all %}{{ b.full_name }}{% if not forloop.last %}・{% endif %}{% endfor %}</span>
+      <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% else %}<div class="day-empty mb-3">グループは、まだありません。下から作れます。</div>{% endif %}
+  {% endif %}
+
+  <form method="post" class="ng-card">
+    {% csrf_token %}
+    <div class="fw-bold mb-2">{% if group %}グループを直す{% else %}新しいグループを作る{% endif %}</div>
+    <label for="ng-name" class="form-label">グループの名前</label>
+    <input type="text" name="name" id="ng-name" class="form-control mb-3" value="{{ name }}" maxlength="{{ name_max }}" placeholder="例：低学年／土曜の利用／送迎あり">
+    <div class="form-label">このグループに入れる子</div>
+    <div class="ng-kids">
+      {% for b in children %}<label><input type="checkbox" name="members" value="{{ b.pk }}"{% if b.pk in picked %} checked{% endif %}> {{ b.full_name }}</label>{% endfor %}
+    </div>
+    <button type="submit" name="action" value="save" class="btn btn-primary w-100 fw-bold py-2 mt-3" id="ng-save">保存する</button>
+    {% if group %}<div class="d-flex justify-content-between mt-2">
+      <a href="{% url 'family:staff_notice_groups' %}" class="btn btn-sm btn-link">やめる</a>
+      <button type="submit" name="action" value="delete" class="btn btn-sm btn-link text-danger" onclick="return confirm('このグループを消します。よろしいですか？');">このグループを消す</button>
+    </div>{% endif %}
+  </form>
+</div>
+{% endblock %}
