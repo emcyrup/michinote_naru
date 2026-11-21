@@ -79,6 +79,12 @@ def sender_label(guardian):
     return f'{guardian.full_name}（{guardian.get_relation_display()}）' if guardian.relation else guardian.full_name
 
 
+def account_of(guardian):
+    """その保護者の記録に結びついた保護者アプリのアカウント（無ければ None）"""
+    link = getattr(guardian, 'family_link', None) if guardian is not None else None
+    return link.account if link is not None else None
+
+
 def create_messages(facility, child, guardian, kind, dates, reason='', body=''):
     """
     保護者ページからの連絡を、日ごとに 1 件ずつ作る。
@@ -96,7 +102,7 @@ def create_messages(facility, child, guardian, kind, dates, reason='', body=''):
                 continue
             made.append(FamilyMessage.objects.create(
                 facility=facility, beneficiary=child, line_user_id=guardian.line_user_id, sender_name=sender_label(guardian),
-                kind=kind, via=FamilyMessage.VIA_PAGE, target_date=d, sent_on=today,
+                account=account_of(guardian), kind=kind, via=FamilyMessage.VIA_PAGE, target_date=d, sent_on=today,
                 reason=reason if kind == FamilyMessage.KIND_ABSENCE else '', body=body))
     return made, skipped
 
@@ -272,7 +278,8 @@ def add_parent_note(facility, child, guardian, day, body):
     if not body:
         return None
     return ParentNote.objects.create(facility=facility, beneficiary=child, date=day, body=body,
-                                     line_user_id=guardian.line_user_id, sender_name=sender_label(guardian))
+                                     line_user_id=guardian.line_user_id, sender_name=sender_label(guardian),
+                                     account=account_of(guardian))
 
 
 def book_rows(facility, day):

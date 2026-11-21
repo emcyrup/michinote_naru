@@ -25,6 +25,7 @@
 
 - **DB の形（migration）は職員向け（`main`）の配備が決めます。** 保護者向けの配備は migrate をしません。保護者向けのブランチで migration を足したら、先に `main` に取り込んで `app=staff` を配備してから、`app=family` を配備します（DB に無い migration があると、配備は止まります）。
 - 保護者向けは、職員向けを配備したあとでないと配備できません。
+- 保護者アプリを作る人向けの説明（アカウント・使える関数・守ること）は `docs/FAMILY_APP.md`。職員向けの `.env` の `FAMILY_APP_URL`（保護者アプリのアドレス。職員が出す「パスワード設定のリンク」の先頭）は、Deploy (naru) が配備先に合わせて入れます。
 - 保護者向けはまだ配備していません（2026-11-20。仕組みだけ用意）。ブランチができてから配備します。ブランチ名は未定で、いまは本番に出せるブランチを `main` と `family` にしてあります（決まったら `deploy-naru.yml` の先頭のステップを直す）。
 - Manage (naru) の `app=family` でできるのは `status`・`autostart_check`・`autostart_install`・`error_log`・`login_log` だけです（データの作業は `app=staff` で）。
 - Python の環境は、同じサーバーのほかの事業所と共用の `~/env` を使わず、成専用の `~/envnaru` を使います（無ければ初回の配備で `~/env` の Python から作る）。成の `requirements.txt` を変えても、ほかの事業所に効きません。

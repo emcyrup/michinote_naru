@@ -23,6 +23,6 @@ class Command(BaseCommand):
         facility.home_icons = on
         facility.use_family_page = on
         facility.save(update_fields=['home_icons', 'use_family_page', 'updated_at'])
-        note = '' if (facility.use_line or not on) else '（LINE連携がオフなので、保護者ページは LINE連携をオンにするまで開けません）'
+        note = '' if (facility.use_line or not on) else '（LINE連携はオフです。職員の画面と保護者アプリのアカウントは使えます。公式 LINE から開く保護者ページは、LINE連携をオンにするまで開けません）'
         self.stdout.write(self.style.SUCCESS(
             f'施設 ID {facility.pk}：ホームのアイコン・保護者ページを{"オン" if on else "オフ"}にしました{note}'))

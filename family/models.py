@@ -45,6 +45,62 @@ class FamilyAccess(models.Model):
         return self
 
 
+class FamilyAccount(models.Model):
+    """
+    保護者アプリ（別アプリ。メールアドレスとパスワードで入る）のアカウント。1 人の保護者に 1 つ。
+    職員が、利用者の画面の保護者の欄から作る（保護者のメールアドレスを使う）。パスワードは保護者が設定用のリンクから決める。
+
+    子どもとの結びつきは FamilyAccountLink（アカウント ↔ 保護者の記録 beneficiaries.Guardian）。
+    保護者の記録は子どもごとに 1 件なので、きょうだいがいる保護者は 1 つのアカウントに複数の記録が付く。
+    父と母は、それぞれのメールアドレスで別のアカウントにする。
+    使い方は family/accounts.py（作る・入る・パスワード・子どもの一覧）。
+    """
+    facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='family_accounts')
+    email = models.EmailField(verbose_name='メールアドレス（小文字で持つ）')
+    password = models.CharField(max_length=128, verbose_name='パスワード（ハッシュ）')
+    is_active = models.BooleanField(default=True, verbose_name='使える')
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+', verbose_name='作った職員')
+    invited_at = models.DateTimeField(null=True, blank=True, verbose_name='設定用のリンクを最後に出した日時')
+    password_set_at = models.DateTimeField(null=True, blank=True, verbose_name='パスワードを決めた日時')
+    last_login_at = models.DateTimeField(null=True, blank=True, verbose_name='最後に入った日時')
+    failed_count = models.PositiveSmallIntegerField(default=0, verbose_name='続けてまちがえた回数')
+    locked_until = models.DateTimeField(null=True, blank=True, verbose_name='この時刻まで入れない')
+
+    class Meta:
+        verbose_name = '保護者アプリのアカウント'
+        verbose_name_plural = '保護者アプリのアカウント'
+        constraints = [models.UniqueConstraint(fields=['facility', 'email'], name='family_account_email_per_facility')]
+
+    def __str__(self):
+        return f'{self.facility} の保護者アカウント（{self.pk}）'
+
+    @property
+    def has_password(self):
+        from django.contrib.auth.hashers import is_password_usable
+        return bool(self.password) and is_password_usable(self.password)
+
+    @property
+    def is_locked(self):
+        return self.locked_until is not None and self.locked_until > timezone.now()
+
+
+class FamilyAccountLink(models.Model):
+    """保護者アプリのアカウントと、保護者の記録（子どもごとに 1 件）の結びつき。保護者の記録 1 件にアカウントは 1 つまで"""
+    account = models.ForeignKey(FamilyAccount, on_delete=models.CASCADE, related_name='links')
+    guardian = models.OneToOneField('beneficiaries.Guardian', on_delete=models.CASCADE, related_name='family_link',
+                                    verbose_name='保護者')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = '保護者アカウントと保護者の結びつき'
+        verbose_name_plural = '保護者アカウントと保護者の結びつき'
+
+    def __str__(self):
+        return f'アカウント {self.account_id} ↔ 保護者 {self.guardian_id}'
+
+
 class FamilyMessage(models.Model):
     """
     保護者からの連絡（欠席連絡・その他の連絡）。1 件が「1 人の子の 1 日ぶん」。
@@ -72,6 +128,8 @@ class FamilyMessage(models.Model):
                                     related_name='family_messages', verbose_name='利用者')
     line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
     sender_name = models.CharField(max_length=120, blank=True, verbose_name='送った保護者')
+    account = models.ForeignKey('family.FamilyAccount', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='送った保護者のアカウント（保護者アプリから）')
     kind = models.CharField(max_length=10, choices=KIND_CHOICES, verbose_name='種類')
     via = models.CharField(max_length=10, choices=VIA_CHOICES, default=VIA_PAGE, verbose_name='届き方')
     target_date = models.DateField(verbose_name='連絡の対象日')
@@ -178,6 +236,8 @@ class ParentNote(models.Model):
     body = models.TextField(verbose_name='内容')
     line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
     sender_name = models.CharField(max_length=120, blank=True, verbose_name='送った保護者')
+    account = models.ForeignKey('family.FamilyAccount', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='送った保護者のアカウント（保護者アプリから）')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='送った日時')
 
     class Meta:
@@ -238,6 +298,8 @@ class UseRequest(models.Model):
     via = models.CharField(max_length=10, choices=VIA_CHOICES, default=VIA_PARENT, verbose_name='申請のしかた')
     line_user_id = models.CharField(max_length=100, blank=True, verbose_name='送った人の LINE User ID')
     sender_name = models.CharField(max_length=120, blank=True, verbose_name='申請した保護者')
+    account = models.ForeignKey('family.FamilyAccount', on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='+', verbose_name='送った保護者のアカウント（保護者アプリから）')
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
                               related_name='+', verbose_name='代わりに入れた職員')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='申請した日時')

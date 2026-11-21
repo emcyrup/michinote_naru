@@ -417,7 +417,7 @@ class BeneficiaryDetailView(LoginRequiredMixin, DetailView):
         ctx = super().get_context_data(**kwargs)
         b = self.object
         today = datetime.date.today()
-        ctx['guardians'] = b.guardians.all()
+        ctx['guardians'] = b.guardians.select_related('family_link__account')
         ctx['status_choices'] = Beneficiary.STATUS_CHOICES
         facility = self.request.user.facility
         if facility.beneficiary_tools:
