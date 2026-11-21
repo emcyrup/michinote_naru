@@ -1,0 +1,25 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}パスワードの設定 — {{ facility.name }}{% endblock %}
+{% block content %}
+<div class="fm-card">
+  <div class="fm-title">パスワードを決める</div>
+  <div class="small text-muted mb-2">ログインに使うメールアドレス：<b class="text-body">{{ account.email }}</b></div>
+  {% if errors %}<div class="alert alert-danger py-2" role="alert">{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+  <form method="post" id="fm-setup" novalidate>
+    {% csrf_token %}
+    <input type="email" name="username" value="{{ account.email }}" autocomplete="username" hidden>
+    <label class="fm-lbl" for="fm-pw" style="margin-top:0;">新しいパスワード</label>
+    <input class="fm-field" type="password" name="password" id="fm-pw" autocomplete="new-password" required>
+    <div class="fm-meta mt-1">8 文字以上。数字だけ・ありふれた言葉・メールアドレスに似たものは使えません。</div>
+    <label class="fm-lbl" for="fm-pw2">もう一度</label>
+    <input class="fm-field" type="password" name="password2" id="fm-pw2" autocomplete="new-password" required>
+    <label class="d-flex align-items-center gap-2 mt-2 small"><input type="checkbox" id="fm-show" style="width:20px;height:20px;"> パスワードを表示する</label>
+    <button type="submit" class="fm-btn mt-3" id="fm-send">このパスワードに決める</button>
+  </form>
+</div>
+<script>
+document.getElementById('fm-show').addEventListener('change', function () {
+  var t = this.checked ? 'text' : 'password'; document.getElementById('fm-pw').type = t; document.getElementById('fm-pw2').type = t; });
+document.getElementById('fm-setup').addEventListener('submit', function () { document.getElementById('fm-send').disabled = true; });
+</script>
+{% endblock %}

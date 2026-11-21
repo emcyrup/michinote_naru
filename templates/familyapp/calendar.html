@@ -1,0 +1,57 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}利用日申請 — {{ year }}年{{ month }}月{% endblock %}
+{% block extra_css %}{% include 'family/_cal_style.html' %}{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'familyapp:home' %}" aria-label="もどる"><i class="bi bi-chevron-left"></i></a>{% if cal_apply %}利用日を申請する{% else %}利用日申請{% endif %}</div>
+
+{% if flash %}
+  {% if flash.made %}<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i>{{ child.full_name }} さんの利用日を申請しました：{% for d in flash.made %}{{ d|date:'n/j（D）' }}{% if not forloop.last %}・{% endif %}{% endfor %}</div>{% endif %}
+  {% if flash.skipped %}<div class="alert alert-warning">次の日は申請できませんでした（休業日か、すでに予定のある日）：{% for d in flash.skipped %}{{ d|date:'n/j（D）' }}{% if not forloop.last %}・{% endif %}{% endfor %}</div>{% endif %}
+{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+{% include 'family/_cal_nav.html' %}
+
+{% if cal_apply %}
+<form method="post" id="cal-form">
+  {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}">
+  <div class="fm-meta mb-2" style="font-size:.9rem;color:#444;">{{ child.full_name }} さんが利用したい日を押して、色を変えてください。</div>
+  {% include 'family/_cal_grid.html' %}
+  <div class="cal-legend">
+    <span><i style="background:var(--brand);"></i>選んだ日</span>
+    <span><i style="background:#eef7f0;"></i>利用の予定がある日</span>
+    <span><i style="background:#f3f1ed;"></i>選べない日</span>
+  </div>
+  {% if not can_pick_any %}<div class="fm-meta mt-2 text-center">この月には、申請できる日がありません（{{ window.0|date:'n月j日' }}〜{{ window.1|date:'n月j日' }} の日を申請できます）。</div>{% endif %}
+  <div class="cal-send">
+    <div class="cal-send-row">
+      <span class="n" id="cal-n">日にちを押して選んでください</span>
+      <a href="?ym={{ ym }}" class="btn btn-outline-secondary">やめる</a>
+    </div>
+    <button type="submit" class="fm-btn mt-2" id="cal-send-btn">送信</button>
+  </div>
+  <div class="fm-meta mt-2">月を替えると、選んだ日は消えます。月ごとに送信してください。きょうの利用や、申請した日の取り消しは、お電話か「欠席連絡」でお知らせください。</div>
+</form>
+{% include 'family/_cal_pick_js.html' %}
+{% else %}
+{% include 'family/_cal_grid.html' %}
+<div class="cal-legend">
+  <span><span class="cal-mark is-use">利用</span> {{ child.full_name }} さんの利用予定</span>
+  <span><i class="bi bi-info-circle-fill" style="border:0;width:auto;height:auto;color:#8a8378;"></i>日付を押すと詳しい内容</span>
+</div>
+<a href="?ym={{ ym }}&apply=1" class="fm-btn mt-3 text-center text-decoration-none" id="cal-apply-btn"><i class="bi bi-calendar-plus me-1"></i>利用日を申請する</a>
+
+{% if agenda %}
+<div class="fw-bold mt-4 mb-2">{{ month }}月の予定</div>
+<ul class="cal-agenda">
+  {% for c in agenda %}
+  <li><a href="{{ cal_day_base }}{{ c.iso }}/">
+    <span class="d">{{ c.date|date:'j日' }}（{{ c.weekday }}）</span>
+    <span class="t{% if c.is_closed %} is-closed{% endif %}">{{ c.label|default:'（詳しい内容あり）' }}{% if c.has_detail %} <small><i class="bi bi-info-circle-fill"></i></small>{% endif %}</span>
+    <i class="bi bi-chevron-right text-muted"></i>
+  </a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}
+{% endblock %}

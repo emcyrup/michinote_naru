@@ -1,0 +1,38 @@
+{% extends 'familyapp/base.html' %}
+{% block head_home %}{% endblock %}
+{% block content %}
+{% if welcome %}<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i>パスワードを決めました。次からは、メールアドレスとこのパスワードでログインできます。</div>{% endif %}
+{% if children|length > 1 %}
+<form method="post" action="{% url 'familyapp:child' %}" class="fm-child">
+  {% csrf_token %}
+  <label for="fm-child" class="small text-muted text-nowrap">お子さま</label>
+  <select name="child" id="fm-child" class="form-select" onchange="this.form.submit()">
+    {% for c in children %}<option value="{{ c.pk }}" {% if c.pk == child.pk %}selected{% endif %}>{{ c.full_name }} さん</option>{% endfor %}
+  </select>
+  <noscript><button class="btn btn-outline-secondary btn-sm">切り替える</button></noscript>
+</form>
+{% endif %}
+<nav class="fm-icons" aria-label="メニュー">
+  {% for it in icons %}
+  <a href="{{ it.href }}">
+    {% if it.soon %}<span class="fm-soon">準備中</span>{% endif %}
+    {% if it.badge %}<span class="fm-badge" aria-label="まだ読んでいないもの {{ it.badge }} 件">{{ it.badge }}</span>{% endif %}
+    <span class="fm-icon">{% if it.icon %}<i class="bi {{ it.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ it.text }}</span>{% endif %}</span>
+    <span class="fm-label">{{ it.label }}</span>
+  </a>
+  {% endfor %}
+</nav>
+<details class="fm-card mt-4" id="fm-a2hs" style="font-size:.9rem;">
+  <summary class="fw-bold">ホーム画面に追加して、アプリのように使う</summary>
+  <div class="mt-2"><b>iPhone（Safari）</b>：画面の下の共有ボタン <i class="bi bi-box-arrow-up"></i> →「ホーム画面に追加」</div>
+  <div class="mt-1"><b>Android（Chrome）</b>：右上の <i class="bi bi-three-dots-vertical"></i> →「ホーム画面に追加」</div>
+</details>
+<div class="fm-foot">
+  {{ account.email }} でログイン中
+  <form method="post" action="{% url 'familyapp:logout' %}" class="mt-2">{% csrf_token %}<button type="submit">ログアウト</button></form>
+</div>
+<script>
+// ホーム画面から開いているときは、追加の案内を出さない
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) { document.getElementById('fm-a2hs').hidden = true; }
+</script>
+{% endblock %}

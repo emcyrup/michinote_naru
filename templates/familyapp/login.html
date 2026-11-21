@@ -1,0 +1,32 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}ログイン — 保護者ページ{% endblock %}
+{% block content %}
+<div class="fm-card">
+  <div class="fm-title">ログイン</div>
+  {% if done %}<div class="alert alert-success py-2">ログアウトしました。</div>{% endif %}
+  {% if error %}
+  <div class="alert alert-danger py-2" role="alert">
+    メールアドレスかパスワードが違います。
+    <div class="small mt-1">{{ max_failures }} 回続けてまちがえると、{{ lock_minutes }} 分のあいだ入れなくなります。</div>
+  </div>
+  {% endif %}
+  <form method="post" id="fm-login" novalidate>
+    {% csrf_token %}
+    {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+    <label class="fm-lbl" for="fm-email" style="margin-top:0;">メールアドレス</label>
+    <input class="fm-field" type="email" name="email" id="fm-email" value="{{ email|default:'' }}" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false" required>
+    <label class="fm-lbl" for="fm-pw">パスワード</label>
+    <input class="fm-field" type="password" name="password" id="fm-pw" autocomplete="current-password" required>
+    <label class="d-flex align-items-center gap-2 mt-2 small"><input type="checkbox" id="fm-show" style="width:20px;height:20px;"> パスワードを表示する</label>
+    <button type="submit" class="fm-btn mt-3" id="fm-send">ログイン</button>
+  </form>
+</div>
+<div class="fm-foot">
+  はじめての方は、事業所からお渡しした「パスワード設定のリンク」を開いてください。<br>
+  パスワードを忘れたときは、事業所へご連絡ください（新しいリンクをお渡しします）。
+</div>
+<script>
+document.getElementById('fm-show').addEventListener('change', function () { document.getElementById('fm-pw').type = this.checked ? 'text' : 'password'; });
+document.getElementById('fm-login').addEventListener('submit', function () { document.getElementById('fm-send').disabled = true; });
+</script>
+{% endblock %}

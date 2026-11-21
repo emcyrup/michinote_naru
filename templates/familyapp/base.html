@@ -1,0 +1,82 @@
+{% load static %}<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="same-origin">
+  <title>{% block title %}{% if facility %}{{ facility.name }} {% endif %}保護者ページ{% endblock %}</title>
+  {# スマートフォンのホーム画面に追加して使う（共有 → ホーム画面に追加） #}
+  <link rel="manifest" href="{% url 'familyapp:manifest' %}">
+  <link rel="apple-touch-icon" href="{% static 'familyapp/icon-180.png' %}">
+  <link rel="icon" type="image/png" href="{% static 'familyapp/icon-192.png' %}">
+  <meta name="apple-mobile-web-app-title" content="{% if facility %}{{ facility.name }}{% else %}保護者ページ{% endif %}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="{% if facility.brand_color %}{{ facility.brand_color }}{% else %}#4e7ea8{% endif %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    :root { --brand: {{ facility.brand_color|default:"#4e7ea8" }}; }
+    body { font-family: 'BIZ UDPGothic', system-ui, sans-serif; background: #f6f4ef; color: #2f2a24; margin: 0; }
+    .fm-head { background: var(--brand); color: #fff; padding: 12px 14px; }
+    .fm-head .fm-name { font-weight: 700; font-size: 1.05rem; }
+    .fm-head .fm-sub { font-size: .8rem; opacity: .9; }
+    .fm-head a { color: #fff; text-decoration: none; }
+    .fm-wrap { max-width: 560px; margin: 0 auto; padding: 14px 12px 48px; }
+    .fm-card { background: #fff; border-radius: 14px; border: 1px solid #e6e1d8; padding: 16px; }
+    .fm-child { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .fm-child select { flex: 1 1 auto; font-size: 1rem; }
+    .fm-icons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .fm-icons a { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 4px 12px; min-height: 128px; background: #fff; border: 1px solid #e6e1d8; border-radius: 18px; color: #2f2a24; text-decoration: none; text-align: center; position: relative; }
+    .fm-icons a:active, .fm-icons a:focus-visible { border-color: var(--brand); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .fm-icon { display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 18px; background: color-mix(in srgb, var(--brand) 12%, #fff); color: var(--brand); font-size: 2.2rem; }
+    .fm-icon .fm-kanji { width: 46px; height: 46px; border: 3px solid var(--brand); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700; line-height: 1; }
+    .fm-label { font-size: .9rem; font-weight: 700; line-height: 1.25; white-space: pre-line; }
+    .fm-badge { position: absolute; top: 7px; right: 7px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 999px; background: #d63a2f; color: #fff; font-size: .8rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .fm-daynav { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 8px; margin-bottom: 12px; }
+    .fm-daynav a { display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 12px; background: #f3f0ea; color: #333; font-size: 1.5rem; text-decoration: none; flex: 0 0 auto; }
+    .fm-daynav .d { font-size: 1.2rem; font-weight: 700; text-align: center; }
+    .fm-daynav .t { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--brand); color: #fff; font-size: .72rem; vertical-align: middle; }
+    .fm-title { font-size: 1.15rem; font-weight: 700; margin: 2px 0 12px; display: flex; align-items: center; gap: 8px; }
+    .fm-title a { color: #6b6257; text-decoration: none; font-size: 1.3rem; line-height: 1; }
+    .fm-text { white-space: pre-wrap; font-size: 1.05rem; line-height: 1.7; }
+    .fm-now { background: #e6eef6; font-weight: 700; color: #2f5d8a; }
+    .fm-meta { font-size: .78rem; color: #8a8378; }
+    .fm-btn { display: block; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-size: 1.1rem; font-weight: 700; }
+    .fm-btn:disabled { opacity: .45; }
+    .fm-soon { position: absolute; top: 7px; right: 7px; font-size: .65rem; padding: 1px 6px; border-radius: 999px; background: #f1eee8; color: #777; }
+    .fm-foot { text-align: center; margin-top: 22px; font-size: .78rem; color: #8a8378; }
+    .fm-foot button { border: 0; background: none; color: #8a8378; text-decoration: underline; padding: 0; font-size: .78rem; }
+    @media (max-width: 360px) { .fm-icons { gap: 8px; } .fm-icon { width: 54px; height: 54px; font-size: 1.9rem; } .fm-label { font-size: .82rem; } }
+    .fm-head { padding-top: calc(12px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 10px; }
+    .fm-head .fm-id { flex: 1 1 auto; min-width: 0; }
+    .fm-head .fm-home { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,.18); font-size: 1.3rem; }
+    .fm-wrap { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+    .fm-field { display: block; width: 100%; padding: 13px 14px; border: 1px solid #cfc8bb; border-radius: 12px; font-size: 1.05rem; background: #fff; }
+    .fm-field:focus { outline: 3px solid color-mix(in srgb, var(--brand) 35%, #fff); border-color: var(--brand); }
+    .fm-env { background: #8a5a00; color: #fff; text-align: center; font-size: .78rem; font-weight: 700; padding: calc(4px + env(safe-area-inset-top)) 10px 4px; }
+    .fm-env + .fm-head { padding-top: 12px; }
+    .fm-lbl { display: block; font-weight: 700; margin: 14px 0 6px; }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  {# 開発環境（アドレスが st- で始まる）と手元では、本番と取り違えないように帯を出す。本番には出ない #}
+  {% with fm_host=request.get_host %}{% if fm_host|slice:":3" == "st-" or fm_host|slice:":9" == "localhost" or fm_host|slice:":9" == "127.0.0.1" %}
+  <div class="fm-env" role="note">開発環境（試し用）　ここで送った内容は、本番には届きません</div>
+  {% endif %}{% endwith %}
+  <header class="fm-head">
+    <div class="fm-id">
+      <div class="fm-name">{% if facility %}<a href="{% url 'familyapp:home' %}">{{ facility.name }}</a>{% else %}保護者ページ{% endif %}</div>
+      {% if facility %}<div class="fm-sub">保護者ページ{% if child %}・{{ child.full_name }} さん{% endif %}</div>{% endif %}
+    </div>
+    {% if child %}{% block head_home %}<a class="fm-home" href="{% url 'familyapp:home' %}" aria-label="ホームへ"><i class="bi bi-house-door-fill"></i></a>{% endblock %}{% endif %}
+  </header>
+  <main class="fm-wrap">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

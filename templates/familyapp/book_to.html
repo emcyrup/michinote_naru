@@ -1,0 +1,36 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}連絡帳 保護者より — {{ day|date:'n月j日' }}{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'familyapp:home' %}" aria-label="もどる"><i class="bi bi-chevron-left"></i></a>連絡帳　保護者より</div>
+{% include 'family/_day_nav.html' %}
+
+{% if sent %}<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i>送りました。</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+{% for n in notes %}
+<div class="fm-card mb-2">
+  <div class="fm-text">{{ n.body }}</div>
+  <div class="fm-meta mt-2">{{ n.created_at|date:'n/j H:i' }} {{ n.sender_name }}</div>
+</div>
+{% endfor %}
+
+{% if writable %}
+<form method="post" class="fm-card mt-2" id="fm-note">
+  {% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+  <label for="fm-body" class="fw-bold mb-2">{{ child.full_name }} さんの様子・伝えたいこと</label>
+  <textarea name="body" id="fm-body" class="form-control mb-3" rows="6" maxlength="{{ body_max }}" style="font-size:1rem;"
+            placeholder="例：朝ごはんをよく食べました。少し鼻水が出ています。"></textarea>
+  <button type="submit" class="fm-btn" id="fm-send">送信</button>
+  <div class="fm-meta mt-2">欠席や、お迎えの変更などの連絡は「欠席連絡」「その他の連絡」から送ってください（職員が確認したことが分かります）。</div>
+</form>
+<script>
+document.getElementById('fm-note').addEventListener('submit', function (e) {
+  if (!document.getElementById('fm-body').value.trim()) { e.preventDefault(); alert('内容を書いてください。'); return; }
+  document.getElementById('fm-send').disabled = true;
+});
+</script>
+{% else %}
+{% if not notes %}<div class="fm-card text-center text-muted">この日の連絡帳はありません。</div>{% endif %}
+<div class="fm-meta mt-2 text-center">この日の連絡帳は、もう書けません（読むだけ）。</div>
+{% endif %}
+{% endblock %}

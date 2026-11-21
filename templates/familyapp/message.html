@@ -1,0 +1,9 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="fm-card text-center">
+  <div class="fw-bold">{{ title }}</div>
+  <div class="small text-muted mt-2" style="white-space:pre-line;">{{ text }}</div>
+  {% if link %}<a href="{{ link }}" class="btn btn-outline-secondary mt-3">{{ link_label }}</a>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,173 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}{% if is_absence %}欠席連絡{% else %}その他の連絡{% endif %} — {{ facility.name }}{% endblock %}
+{% block extra_css %}
+<style>
+  .fm-title { font-size: 1.15rem; font-weight: 700; margin: 2px 0 12px; display: flex; align-items: center; gap: 8px; }
+  .fm-title a { color: #6b6257; text-decoration: none; font-size: 1.3rem; line-height: 1; }
+  .fm-q { font-weight: 700; margin-bottom: 10px; }
+  .fm-opt { display: flex; align-items: center; gap: 12px; padding: 14px; border: 2px solid #e0dbd1; border-radius: 12px; background: #fff; margin-bottom: 10px; font-size: 1.05rem; cursor: pointer; }
+  .fm-opt input { width: 24px; height: 24px; flex: 0 0 auto; accent-color: var(--brand); }
+  .fm-opt.is-on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 7%, #fff); }
+  .fm-btn { display: block; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--brand); color: #fff; font-size: 1.1rem; font-weight: 700; }
+  .fm-btn:disabled { opacity: .45; }
+  .fm-btn-sub { display: block; width: 100%; padding: 12px; border: 1px solid #cfc8bb; border-radius: 12px; background: #fff; color: #444; font-size: 1rem; margin-top: 8px; }
+  .fm-cal { border: 1px solid #e0dbd1; border-radius: 12px; padding: 10px; margin-bottom: 10px; background: #fff; }
+  .fm-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .fm-cal-head button { width: 44px; height: 44px; border: 0; border-radius: 10px; background: #f3f0ea; font-size: 1.2rem; }
+  .fm-cal-head button:disabled { opacity: .3; }
+  .fm-cal-month { font-weight: 700; font-size: 1.05rem; }
+  .fm-cal table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 3px; }
+  .fm-cal th { text-align: center; font-size: .75rem; color: #6b6257; font-weight: 400; padding: 2px 0; }
+  .fm-cal th.sun { color: #c0392b; } .fm-cal th.sat { color: #2b6cb0; }
+  .fm-cal td { padding: 0; }
+  .fm-cal td button { width: 100%; aspect-ratio: 1 / 1; border: 1px solid #e6e1d8; border-radius: 10px; background: #fff; font-size: 1rem; color: #2f2a24; }
+  .fm-cal td button.sun { color: #c0392b; } .fm-cal td button.sat { color: #2b6cb0; }
+  .fm-cal td button:disabled { background: #f1efea; color: #b9b3a8; border-color: #f1efea; }
+  .fm-cal td button.is-today { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .fm-cal td button.is-on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+  .fm-picked { font-size: .9rem; color: #555; margin: 4px 2px 10px; min-height: 1.4em; }
+  .fm-hist { list-style: none; padding: 0; margin: 0; }
+  .fm-hist li { background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .fm-hist .d { font-weight: 700; }
+  .fm-hist .b { white-space: pre-wrap; font-size: .92rem; margin-top: 2px; }
+  .fm-state { float: right; font-size: .78rem; padding: 2px 9px; border-radius: 999px; background: #f1eee8; color: #666; }
+  .fm-state.ok { background: #e3f3e6; color: #1e6b33; }
+  textarea.form-control { font-size: 1rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'familyapp:home' %}" aria-label="もどる"><i class="bi bi-chevron-left"></i></a>{% if is_absence %}欠席連絡{% else %}その他の連絡{% endif %}</div>
+
+{% if flash %}
+<div class="alert alert-success">
+  {% if flash.made %}<div><i class="bi bi-check-circle-fill me-1"></i>{% for d in flash.made %}{{ d|date:'n月j日' }}{% if not forloop.last %}・{% endif %}{% endfor %} の連絡を送りました。</div>{% endif %}
+  {% if flash.skipped %}<div class="small mt-1">{% for d in flash.skipped %}{{ d|date:'n月j日' }}{% if not forloop.last %}・{% endif %}{% endfor %} は、すでに欠席の連絡をいただいています。</div>{% endif %}
+  <div class="small mt-1">{{ facility.name }} の職員が確認すると、下の一覧に「確認済み」と出ます。</div>
+</div>
+{% endif %}
+{% if errors %}<div class="alert alert-danger">{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+
+<form method="post" id="fm-form" class="fm-card mb-3" novalidate>
+  {% csrf_token %}
+  <div id="fm-dates-store">{% for d in form.dates %}<input type="hidden" name="dates" value="{{ d }}">{% endfor %}</div>
+
+  <div id="fm-step1">
+    <div class="fm-q">{% if is_absence %}欠席する日にちを選択してください{% else %}連絡の該当日を選択してください{% endif %}</div>
+    <label class="fm-opt" id="fm-opt-today"><input type="checkbox" name="use_today" value="1" id="fm-today"> 今日（{{ today|date:'n月j日' }}）</label>
+    <label class="fm-opt" id="fm-opt-cal"><input type="checkbox" id="fm-usecal"> カレンダーから日にちを選択{% if not is_absence %}する{% endif %}</label>
+    <div class="fm-cal" id="fm-cal" hidden>
+      <div class="fm-cal-head">
+        <button type="button" id="fm-prev" aria-label="前の月"><i class="bi bi-chevron-left"></i></button>
+        <div class="fm-cal-month" id="fm-month"></div>
+        <button type="button" id="fm-next" aria-label="次の月"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <table aria-label="日にちを選ぶ（いくつでも）">
+        <thead><tr><th class="sun">日</th><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th class="sat">土</th></tr></thead>
+        <tbody id="fm-grid"></tbody>
+      </table>
+      <div class="small text-muted mt-1">日にちを押すと選べます（もう一度押すと外れます。{{ dates_max }} 日まで）。</div>
+    </div>
+    <div class="fm-picked" id="fm-picked" aria-live="polite"></div>
+    <button type="button" class="fm-btn" id="fm-go" disabled>次へ</button>
+  </div>
+
+  <div id="fm-step2" hidden>
+    <div class="fm-picked" id="fm-picked2"></div>
+    {% if is_absence %}
+    <div class="fm-q">欠席理由</div>
+    {% for value, label in reasons %}
+    <label class="fm-opt"><input type="radio" name="reason" value="{{ value }}" {% if form.reason == value %}checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+    <label class="fm-q mt-2" for="fm-body">備考 <span class="fw-normal small text-muted">（任意）</span></label>
+    {% else %}
+    <label class="fm-q" for="fm-body">連絡内容</label>
+    {% endif %}
+    <textarea name="body" id="fm-body" class="form-control mb-3" rows="{% if is_absence %}3{% else %}5{% endif %}" maxlength="{{ body_max }}"
+              placeholder="{% if is_absence %}例：熱が 38 度あります{% else %}例：今日は習い事があるので 17:30 に送ってください{% endif %}">{{ form.body }}</textarea>
+    <button type="submit" class="fm-btn" id="fm-send">送信</button>
+    <button type="button" class="fm-btn-sub" id="fm-back">日にちを選び直す</button>
+  </div>
+</form>
+
+<div class="fm-q">これまでに送った連絡（{{ child.full_name }} さん）</div>
+{% if sent %}
+<ul class="fm-hist">
+  {% for m in sent %}
+  <li>
+    <span class="fm-state {% if m.is_confirmed %}ok{% endif %}">{% if m.is_confirmed %}<i class="bi bi-check-circle-fill"></i> 確認済み{% else %}未確認{% endif %}</span>
+    <div class="d">{{ m.target_date|date:'n月j日（D）' }}{% if m.is_absence %}・{{ m.get_reason_display }}{% endif %}</div>
+    {% if m.body %}<div class="b">{{ m.body }}</div>{% endif %}
+    <div class="small text-muted">{{ m.created_at|date:'n/j H:i' }} に送信{% if m.sender_name %}（{{ m.sender_name }}）{% endif %}</div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="small text-muted">まだありません。</div>
+{% endif %}
+
+<script>
+(function () {
+  var TODAY = '{{ today|date:"Y-m-d" }}', LAST = '{{ last_day|date:"Y-m-d" }}', MAX = {{ dates_max }}, IS_ABSENCE = {{ is_absence|yesno:"true,false" }};
+  var store = document.getElementById('fm-dates-store'), todayBox = document.getElementById('fm-today'), useCal = document.getElementById('fm-usecal');
+  var cal = document.getElementById('fm-cal'), grid = document.getElementById('fm-grid'), monthEl = document.getElementById('fm-month');
+  var prev = document.getElementById('fm-prev'), next = document.getElementById('fm-next'), go = document.getElementById('fm-go');
+  var picked = {};
+  [].forEach.call(store.querySelectorAll('input'), function (i) { if (i.value === TODAY) { todayBox.checked = true; } else { picked[i.value] = true; } });
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function iso(y, m, d) { return y + '-' + pad(m + 1) + '-' + pad(d); }
+  function label(s) { var p = s.split('-'); return (+p[1]) + '月' + (+p[2]) + '日'; }
+  var view = new Date(+TODAY.slice(0, 4), +TODAY.slice(5, 7) - 1, 1);
+  function all() { var a = Object.keys(picked); if (todayBox.checked && a.indexOf(TODAY) === -1) a.push(TODAY); return a.sort(); }
+  function draw() {
+    var y = view.getFullYear(), m = view.getMonth(), first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate(), html = '<tr>', i, d;
+    monthEl.textContent = y + '年' + (m + 1) + '月';
+    for (i = 0; i < first; i++) html += '<td></td>';
+    for (d = 1; d <= days; d++) {
+      var s = iso(y, m, d), w = (first + d - 1) % 7, off = s < TODAY || s > LAST;
+      html += '<td><button type="button" data-d="' + s + '" class="' + (w === 0 ? 'sun ' : w === 6 ? 'sat ' : '') + (s === TODAY ? 'is-today ' : '') + (picked[s] || (s === TODAY && todayBox.checked) ? 'is-on' : '') + '"' + (off ? ' disabled' : '') + ' aria-pressed="' + (picked[s] ? 'true' : 'false') + '">' + d + '</button></td>';
+      if (w === 6 && d < days) html += '</tr><tr>';
+    }
+    grid.innerHTML = html + '</tr>';
+    prev.disabled = iso(y, m, 1) <= TODAY.slice(0, 8) + '01';
+    next.disabled = new Date(y, m + 1, 1) > new Date(+LAST.slice(0, 4), +LAST.slice(5, 7) - 1, +LAST.slice(8));
+  }
+  function refresh() {
+    var a = all(), text = a.length ? '選んだ日：' + a.map(label).join('・') : '';
+    document.getElementById('fm-picked').textContent = text;
+    document.getElementById('fm-picked2').textContent = text;
+    go.disabled = a.length === 0;
+    document.getElementById('fm-opt-today').classList.toggle('is-on', todayBox.checked);
+    document.getElementById('fm-opt-cal').classList.toggle('is-on', useCal.checked);
+    cal.hidden = !useCal.checked;
+    store.innerHTML = '';
+    Object.keys(picked).forEach(function (s) { var i = document.createElement('input'); i.type = 'hidden'; i.name = 'dates'; i.value = s; store.appendChild(i); });
+    if (useCal.checked) draw();
+  }
+  grid.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-d]'); if (!b || b.disabled) return;
+    var s = b.getAttribute('data-d');
+    if (s === TODAY) { todayBox.checked = !(todayBox.checked || picked[s]); delete picked[s]; }
+    else if (picked[s]) { delete picked[s]; }
+    else { if (all().length >= MAX) { alert('一度に選べるのは ' + MAX + ' 日までです。'); return; } picked[s] = true; }
+    refresh();
+  });
+  todayBox.addEventListener('change', refresh);
+  useCal.addEventListener('change', function () { if (!useCal.checked) { picked = {}; } refresh(); });
+  prev.addEventListener('click', function () { view.setMonth(view.getMonth() - 1); draw(); });
+  next.addEventListener('click', function () { view.setMonth(view.getMonth() + 1); draw(); });
+  function step(n) { document.getElementById('fm-step1').hidden = n !== 1; document.getElementById('fm-step2').hidden = n !== 2; window.scrollTo(0, 0); }
+  go.addEventListener('click', function () { if (all().length) step(2); });
+  document.getElementById('fm-back').addEventListener('click', function () { step(1); });
+  document.getElementById('fm-form').addEventListener('submit', function (e) {
+    if (IS_ABSENCE && !document.querySelector('input[name=reason]:checked')) { e.preventDefault(); alert('欠席の理由（病欠・都合欠）を選んでください。'); return; }
+    if (!IS_ABSENCE && !document.getElementById('fm-body').value.trim()) { e.preventDefault(); alert('連絡の内容を書いてください。'); return; }
+    document.getElementById('fm-send').disabled = true;
+  });
+  [].forEach.call(document.querySelectorAll('input[name=reason]'), function (r) { r.addEventListener('change', function () {
+    [].forEach.call(document.querySelectorAll('input[name=reason]'), function (x) { x.closest('.fm-opt').classList.toggle('is-on', x.checked); }); }); });
+  if (Object.keys(picked).length) useCal.checked = true;
+  refresh();
+  {% if errors and form.dates %}step(2);{% endif %}
+})();
+</script>
+{% endblock %}

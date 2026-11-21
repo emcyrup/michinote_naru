@@ -1,0 +1,21 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}{{ day|date:'n月j日' }}の予定{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'familyapp:calendar' %}?ym={{ ym }}" aria-label="カレンダーへもどる"><i class="bi bi-chevron-left"></i></a>{{ day|date:'n月j日' }}（{{ weekday }}）{% if is_today %}<span class="badge rounded-pill" style="background:var(--brand);font-size:.7rem;">きょう</span>{% endif %}</div>
+{% if holiday %}<div class="fm-meta mb-2">{{ holiday }}</div>{% endif %}
+
+<div class="fm-card">
+  {% if event and event.is_closed %}<div class="mb-2"><span class="badge" style="background:#c0392b;font-size:.9rem;">休業日</span></div>{% endif %}
+  {% if event and event.title %}<div style="font-size:1.25rem;font-weight:700;">{{ event.title }}</div>{% endif %}
+  {% if event and event.detail %}<div class="fm-text mt-2">{{ event.detail }}</div>{% endif %}
+  {% if not event %}<div class="text-muted text-center">この日の予定は、まだ入っていません。</div>{% endif %}
+</div>
+
+<div class="fm-card mt-2">
+  {% if use %}<i class="bi bi-check-circle-fill" style="color:#1e6b33;"></i> {{ child.full_name }} さんは、この日 <b>利用の予定</b> です。
+  {% elif absent %}{{ child.full_name }} さんは、この日 <b>欠席</b> です。
+  {% else %}{{ child.full_name }} さんは、この日の利用の予定はありません。{% endif %}
+</div>
+
+<a href="{% url 'familyapp:calendar' %}?ym={{ ym }}" class="btn btn-outline-secondary w-100 mt-3">カレンダーへもどる</a>
+{% endblock %}
