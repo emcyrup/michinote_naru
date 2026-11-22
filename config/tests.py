@@ -1,4 +1,4 @@
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 
 class HealthzTests(SimpleTestCase):
@@ -100,3 +100,25 @@ class PdfUrlFetcherTests(SimpleTestCase):
                     f.fetch('ftp://example.invalid/x')                   # 許していない方式
                 pdf = render_pdf('<p>テスト</p><img src="file:///etc/passwd">')
                 self.assertTrue(pdf.startswith(b'%PDF'))
+
+
+class ContentSecurityPolicyTests(TestCase):
+    """画面が読み込める先を絞る決まり（CSP）と、CDN の部品の改ざん検知（SRI）"""
+
+    def test_pages_carry_the_policy(self):
+        csp = self.client.get('/accounts/login/')['Content-Security-Policy']
+        for part in ("default-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'",
+                     "frame-ancestors 'self'", "connect-src 'self'"):
+            self.assertIn(part, csp)
+        self.assertIn('https://cdn.jsdelivr.net', csp)
+
+    def test_cdn_parts_have_integrity(self):
+        import re
+        from pathlib import Path
+        from django.conf import settings
+        hosts = ('cdn.jsdelivr.net', 'unpkg.com')
+        for path in Path(settings.BASE_DIR, 'templates').rglob('*.html'):
+            for tag in re.findall(r'<(?:script|link)\b[^>]*>', path.read_text(encoding='utf-8')):
+                if any(f'//{h}/' in tag for h in hosts):
+                    self.assertIn('integrity="sha384-', tag, f'{path}: {tag}')
+                    self.assertIn('crossorigin="anonymous"', tag, f'{path}: {tag}')
