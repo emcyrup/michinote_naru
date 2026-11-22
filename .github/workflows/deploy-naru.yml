@@ -12,6 +12,8 @@
 #   DB と写真・書類の置き場所（~/michinotenaru/media）は職員向けと共用。DB の形は職員向け（main）の配備が決めるので、
 #   保護者向けの配備では migrate しない（このコードの migration が DB に無ければ止まる → 先に main へ入れて app=staff を配備）
 #   本番はブランチ main か family から
+#   .env の SECRET_KEY は職員向けと同じ値（初回に写す。パスワード設定のリンクの署名に使うため）。
+#   .env の DJANGO_SETTINGS_MODULE=config.settings_family で、保護者の画面だけを出す設定で起動する
 #
 # アドレス・ポート・DB 名・DB ユーザーは、ここに書いた値で決まる（入力欄は無い：開発と本番の取り違えを防ぐ）。
 # サーバーに .env がもうあるときは、そのアドレスと DB 名が配備先と合っているか確かめ、違えば止める。
@@ -230,7 +232,16 @@ jobs:
               ( umask 077; cp deploy/.env.naru.example .env )
               chmod 600 .env
               sed -i "s#NARU_DOMAIN_PLACEHOLDER#$DOMAIN_IN#g; s#NARU_DB_NAME_PLACEHOLDER#$DB_IN#; s#NARU_DB_USER_PLACEHOLDER#$DB_USER_IN#" .env
-              setenv SECRET_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
+              if [ "$SKIP_MIGRATE" = "1" ]; then
+                # 保護者向けは、職員向けと同じ SECRET_KEY にする：職員の画面が出す「パスワード設定のリンク」は SECRET_KEY で
+                # 署名してあるので、値が違うと保護者アプリで開けない（値は表示しない）
+                staff_key=$(grep -E '^SECRET_KEY=' "$STAFF_DIR/.env" | tail -n 1 | cut -d= -f2-)
+                [ -n "$staff_key" ] || { echo "ERROR: 職員向けの .env に SECRET_KEY がありません"; rm -f .env; exit 1; }
+                setenv SECRET_KEY "$staff_key"
+                echo "  SECRET_KEY: 職員向けの .env と同じ値にしました"
+              else
+                setenv SECRET_KEY "$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')"
+              fi
               setenv MEDIA_ROOT "$STAFF_DIR/media"   # 保護者向けも職員向けの置き場所を見る（職員が入れた写真・書類を出すため）
               setenv PORT "$PORT_IN"
               setenv DB_PASSWORD "$DB_PASSWORD_IN"
@@ -246,6 +257,22 @@ jobs:
             fi
             # 保護者アプリのアドレス（あとから足した設定。.env に無いか空のときだけ入れる）
             if [ -z "$(getenv FAMILY_APP_URL)" ]; then setenv FAMILY_APP_URL "$FAMILY_URL_IN"; echo ".env に FAMILY_APP_URL を入れました"; fi
+
+            if [ "$SKIP_MIGRATE" = "1" ]; then
+              # 保護者向けは、保護者の画面だけを出す設定（config/settings_family.py）で動かす。deploy/venv-deploy.sh が .env から読む
+              if [ "$(getenv DJANGO_SETTINGS_MODULE)" != "config.settings_family" ]; then
+                setenv DJANGO_SETTINGS_MODULE config.settings_family; echo ".env に DJANGO_SETTINGS_MODULE=config.settings_family を入れました"
+              fi
+              git cat-file -e "$SHA:config/settings_family.py" 2>/dev/null || {
+                echo "ERROR: このコミットには保護者アプリの設定（config/settings_family.py）がありません。保護者向けのブランチを選んで実行してください"; exit 1; }
+              # 起動のスクリプトが .env の DJANGO_SETTINGS_MODULE を読む版であること（古い版のままだと、再起動のあとに職員の画面が出てしまう）
+              grep -q 'DJANGO_SETTINGS_MODULE' deploy/venv-deploy.sh || {
+                echo "ERROR: このコミットの deploy/venv-deploy.sh が古い版です。保護者向けのブランチに main を取り込んでから、もう一度実行してください"; exit 1; }
+              # SECRET_KEY が職員向けと違うと、パスワード設定のリンクが開けない（値は出さず、同じかどうかだけ見る）
+              if [ "$(grep -E '^SECRET_KEY=' .env | tail -n 1)" != "$(grep -E '^SECRET_KEY=' "$STAFF_DIR/.env" | tail -n 1)" ]; then
+                echo "WARNING: 保護者向けの SECRET_KEY が職員向けと違います。職員の画面で出したパスワード設定のリンクが、保護者アプリで開けません（.env を直して再起動してください）"
+              fi
+            fi
 
             # 5) pip → migrate → collectstatic → Gunicorn の再起動 → サーバーの中からの healthz
             APP_DIR="$APP_DIR" VENV="$VENV" SKIP_MIGRATE="$SKIP_MIGRATE" bash deploy/venv-deploy.sh "$SHA"
