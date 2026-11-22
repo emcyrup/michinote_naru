@@ -41,6 +41,18 @@ if [ -f .env ]; then
 fi
 PORT=${PORT:-8029}
 WORKERS=${WORKERS:-2}
+# 設定のモジュール（.env の DJANGO_SETTINGS_MODULE。複数あれば最後の行）。あれば、manage.py と Gunicorn の両方をその設定で動かす。
+# 無ければ何もしない（config/wsgi.py・manage.py の既定の config.settings）。
+# 例：保護者アプリ（同じコードを、保護者の画面だけの config.settings_family で動かす）
+if [ -z "${DJANGO_SETTINGS_MODULE:-}" ] && [ -f .env ]; then
+  DJANGO_SETTINGS_MODULE=$(grep -E '^DJANGO_SETTINGS_MODULE=' .env | tail -n 1 | cut -d= -f2- | tr -d '[:space:]"' || true)
+fi
+if [ -n "${DJANGO_SETTINGS_MODULE:-}" ]; then
+  [[ "$DJANGO_SETTINGS_MODULE" =~ ^[A-Za-z_][A-Za-z0-9_.]*$ ]] || { echo "ERROR: DJANGO_SETTINGS_MODULE はモジュールの名前で入れてください（例 config.settings_family）: $DJANGO_SETTINGS_MODULE"; exit 1; }
+  export DJANGO_SETTINGS_MODULE
+else
+  unset DJANGO_SETTINGS_MODULE
+fi
 # 待ち受けるアドレス。既定は 127.0.0.1（ループバック）。.env の GUNICORN_BIND_HOST（複数あれば最後の行）で変えられる
 if [ -f .env ]; then
   BIND_HOST=${BIND_HOST:-$(grep -E '^GUNICORN_BIND_HOST=' .env | tail -n 1 | cut -d= -f2- | tr -d '[:space:]"' || true)}
@@ -175,6 +187,7 @@ status() {
   fi
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$LOCAL_HOST:$PORT/healthz/" || true)
   echo "healthz ($LOCAL_HOST:$PORT): $code"
+  [ -n "${DJANGO_SETTINGS_MODULE:-}" ] && echo "settings: $DJANGO_SETTINGS_MODULE"
   echo "code: $(git rev-parse --short HEAD 2>/dev/null) $(git log -1 --format='%cd %s' --date=format:'%Y-%m-%d %H:%M' 2>/dev/null | cut -c1-80)"
   [ -f logs/deploy.log ] && { echo "最近の配備:"; tail -n 5 logs/deploy.log; }
   return 0
@@ -295,6 +308,11 @@ echo "code: $(git rev-parse --short HEAD) $(git log -1 --pretty=%s | cut -c1-60)
 echo "$(date '+%Y-%m-%d %H:%M:%S') $(git rev-parse --short HEAD) ${1:-pull}" >> logs/deploy.log
 
 # 2) 依存・DB・静的ファイル
+if [ -n "${DJANGO_SETTINGS_MODULE:-}" ]; then
+  # 設定のモジュールがこのコミットに無いと、あとの手順が分かりにくい失敗になるので、先に確かめる
+  [ -f "$(echo "$DJANGO_SETTINGS_MODULE" | tr . /).py" ] || { echo "ERROR: 設定 $DJANGO_SETTINGS_MODULE がこのコミットにありません（.env の DJANGO_SETTINGS_MODULE と、配備するブランチを確かめてください）"; exit 1; }
+  echo "settings: $DJANGO_SETTINGS_MODULE"
+fi
 pip install --quiet --upgrade pip wheel >/dev/null 2>&1 || true
 pip install --quiet -r requirements.txt
 # .env に WHISPER_MODEL があれば、サーバー内の文字起こし（faster-whisper）も入れる
