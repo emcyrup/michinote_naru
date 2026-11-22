@@ -25,6 +25,8 @@
 
 - **DB の形（migration）は職員向け（`main`）の配備が決めます。** 保護者向けの配備は migrate をしません。保護者向けのブランチで migration を足したら、先に `main` に取り込んで `app=staff` を配備してから、`app=family` を配備します（DB に無い migration があると、配備は止まります）。
 - 保護者向けは、職員向けを配備したあとでないと配備できません。
+- **保護者向けの `.env` の `SECRET_KEY` は、職員向けと同じ値**にします（初回の配備で、職員向けの `.env` から写す）。職員の画面が出す「パスワード設定のリンク」は `SECRET_KEY` で署名してあるので、値が違うと保護者アプリで開けません。職員向けの `SECRET_KEY` を変えたら、保護者向けも同じ値に直して再起動します（違っていると、配備のログに WARNING が出ます）。
+- **保護者向けは `config.settings_family` で起動**します（保護者の画面と `/healthz/` だけを出す設定）。配備のとき `.env` に `DJANGO_SETTINGS_MODULE=config.settings_family` が入り、`deploy/venv-deploy.sh` がそれを読んで `manage.py` と Gunicorn の両方に渡します（自動起動・5 分ごとの見回りでも同じ）。このため、保護者向けのブランチには `main`（この版の `venv-deploy.sh`）を取り込んでおく必要があります（古い版のままだと、配備は止まります）。
 - 保護者アプリを作る人向けの説明（アカウント・使える関数・守ること）は `docs/FAMILY_APP.md`。職員向けの `.env` の `FAMILY_APP_URL`（保護者アプリのアドレス。職員が出す「パスワード設定のリンク」の先頭）は、Deploy (naru) が配備先に合わせて入れます。
 - 保護者向けはまだ配備していません（2026-11-20。仕組みだけ用意）。ブランチができてから配備します。ブランチ名は未定で、いまは本番に出せるブランチを `main` と `family` にしてあります（決まったら `deploy-naru.yml` の先頭のステップを直す）。
 - Manage (naru) の `app=family` でできるのは `status`・`autostart_check`・`autostart_install`・`error_log`・`login_log` だけです（データの作業は `app=staff` で）。
