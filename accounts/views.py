@@ -451,8 +451,8 @@ def new_signup_code():
 
 
 def _client_ip(request):
-    return (request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-            or request.META.get('REMOTE_ADDR', '') or 'unknown')
+    from . import security
+    return security.client_ip(request) or 'unknown'
 
 
 class StaffRegisterView(View):

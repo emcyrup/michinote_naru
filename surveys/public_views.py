@@ -16,7 +16,8 @@ POST_LIMIT, POST_WINDOW = 5, 600        # 同じ端末から 10 分に 5 回ま�
 
 
 def client_key(request):
-    raw = (request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip() or request.META.get('REMOTE_ADDR', '')) \
+    from accounts import security
+    raw = security.client_ip(request) \
         + '|' + request.META.get('HTTP_USER_AGENT', '')[:120]
     return hashlib.sha256(raw.encode('utf-8', 'ignore')).hexdigest()[:32]
 

@@ -115,6 +115,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # カスタムユーザーモデル（StaffAccountで職員管理を行う）
 AUTH_USER_MODEL = 'accounts.StaffAccount'
+# ログインの一時ロックを、どの入口（ログイン画面・スマホアプリ用の API・管理画面）でも効かせる（accounts/backends.py）
+AUTHENTICATION_BACKENDS = ['accounts.backends.LockAwareBackend']
+# 前段の中継（nginx）の数。接続元の IP を X-Forwarded-For の末尾からこの数だけ戻って読む（accounts/security.py の client_ip）。
+# nginx の前に CDN などをもう 1 段置いたら 2 にする
+TRUSTED_PROXY_COUNT = config('TRUSTED_PROXY_COUNT', default=1, cast=int)
 
 LANGUAGE_CODE = 'ja'
 TIME_ZONE = 'Asia/Tokyo'

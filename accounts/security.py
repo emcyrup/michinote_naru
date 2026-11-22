@@ -28,10 +28,18 @@ KEEP_DAYS = 180
 
 
 def client_ip(request):
+    """
+    接続元の IP。前段の nginx が X-Forwarded-For の**末尾**に足した値を読む（設定 TRUSTED_PROXY_COUNT＝前段の中継の数。既定 1）。
+    先頭は送り手が自由に書けるので使わない（先頭を信じると、ヘッダーを変えるだけで IP ごとの回数制限を外せ、
+    ほかの人の IP を騙ってロックさせることもできる。2026-11-22 セキュリティ診断）。
+    中継の数より短いとき（ヘッダーが無い・手元で直接つないだ）は REMOTE_ADDR。
+    """
     if request is None:
         return ''
-    return (request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-            or request.META.get('REMOTE_ADDR', '') or '')[:64]
+    hops = max(int(getattr(settings, 'TRUSTED_PROXY_COUNT', 1) or 0), 0)
+    parts = [p.strip() for p in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if p.strip()]
+    ip = parts[-hops] if hops and len(parts) >= hops else ''
+    return (ip or request.META.get('REMOTE_ADDR', '') or '')[:64]
 
 
 def record(kind, request=None, username='', user=None):
@@ -78,6 +86,10 @@ def _on_login(sender, request, user, **kwargs):
 @receiver(user_login_failed)
 def _on_fail(sender, credentials, request=None, **kwargs):
     username = str(credentials.get('username') or '')
+    if locked_until(username, client_ip(request)) is not None:
+        # ロック中の試行（どの入口でも accounts/backends.py が止める）。失敗には数えない：数えると、試し続けるだけでロックが延び続ける
+        record(LoginEvent.KIND_LOCK, request, username)
+        return
     record(LoginEvent.KIND_FAIL, request, username)
     try:
         _check_after_fail(request, username)
