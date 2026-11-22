@@ -45,6 +45,7 @@
 | `NARU_DEV_DEPLOY_HOST`・`NARU_DEV_DEPLOY_USER`・`NARU_DEV_DEPLOY_SSH_KEY` | 開発のサーバーの SSH | 開発の配備・管理。無ければ `HOUDEIDEMO_DEPLOY_*`、その次に `DEV_DEPLOY_*` を使う（試用環境と同じサーバーのとき） |
 | `NARU_DEV_ADMIN_PASSWORD`・`NARU_PROD_ADMIN_PASSWORD` | 管理者（職員）のパスワード。無ければ `NARU_ADMIN_PASSWORD` | Manage (naru) の `create_facility`・`set_password` |
 | `NARU_ANTHROPIC_API_KEY`（環境ごとに分けるなら `NARU_DEV_…`・`NARU_PROD_…`） | Anthropic の API キー | 任意。無いと AI の機能（日誌の下書きなど）が使えない |
+| `NARU_DEV_SSH_HOST_KEY`・`NARU_PROD_SSH_HOST_KEY` | サーバーのホスト鍵（公開鍵。`ssh-ed25519 AAAA…` の 1 行）。登録すると、その鍵のサーバーにだけつなぐ | すすめる（下の 4.） |
 | `NARU_DEV_DEPLOY_SSH_PORT`・`NARU_PROD_DEPLOY_SSH_PORT`・`NARU_APP_DIR`・`NARU_VENV`・`NARU_BASE_VENV` | SSH のポート（既定 22）・置き場所・Python の環境 | 既定と違うときだけ |
 
 ## 2. 配備
@@ -84,3 +85,10 @@
 - **この 2 つの画面の決まりを変えたら、職員向けと保護者向けを続けて配備する。** リンクの合い言葉の作りは職員向け（出す側）と保護者向け（確かめる側）で同じコード（`family/accounts.py`）を使うので、片方だけ新しいと、出したリンクが開けない。
 - **職員のパスワード**：管理者が決めるときも、短い・ありふれている・数字だけ のものは断る。パスワードを変える・職員を無効にすると、スマホのアプリのログインも切れる（アプリのログインは、使い続けていても 1 年で切れる）。開発向けユーザー・スーパーユーザーは、事業所の管理者からは編集できない。
 - 診断をやり直すとき：Manage (naru) → `task=security_check`（読み取りだけ。サーバーの設定・権限と、外から見える応答）。
+- **画面が読み込める先を絞っている（CSP）。** スクリプト・スタイル・フォントは、このアプリ自身と、決めた配布元（cdn.jsdelivr.net・unpkg.com・Google Fonts）だけ。送信先・埋め込みは自分のドメインだけ。配布元を足すときは `config/settings.py` の `_CSP_POLICY` にも足す。画面がこわれたときの逃げ道は、サーバーの `.env` に `CSP_MODE=report`（守らせず、ブラウザのコンソールに出すだけ）か `CSP_MODE=off` を書いて再起動。
+- **配布元（CDN）から読む部品は、中身も確かめている（SRI）。** テンプレートの `integrity="sha384-…"`。版を上げるときは、新しい版のハッシュに書き換える（`openssl dgst -sha384 -binary ファイル | openssl base64 -A`）。忘れるとその部品が読み込まれず、テスト（`config/tests.py`）は `integrity` の付け忘れだけを見つける。
+- **SSH のホスト鍵を固定できる。** サーバーで `cat /etc/ssh/ssh_host_ed25519_key.pub` を実行し、出た行の「`ssh-ed25519 AAAA…`」を Secrets の `NARU_DEV_SSH_HOST_KEY`・`NARU_PROD_SSH_HOST_KEY` に入れる（同じサーバーなら同じ値）。登録すると、鍵が合わないサーバーへはつながずに止まる。未登録の間は、その場で受け取った鍵を信じてつなぐ（実行結果に注意書きが出る）。サーバーを入れ替えたら Secrets も直す。
+- **本番と開発で、GitHub の Environment を分けてある**（`naru-prod`・`naru-dev`。最初の実行でできる）。Settings → Environments → `naru-prod` で、次を付けられる（付けなくても、これまでどおり動く）。
+  - **Required reviewers**：本番への配備・管理は、選んだ人が画面で承認するまで始まらない。
+  - **Deployment branches**：`main` と `family` だけにする。
+  - **Environment secrets**：`NARU_PROD_*` をここへ移す（同じ名前で入れ直してから、リポジトリの側を消す）。移すと、本番の Secrets は `naru-prod` を名乗る実行（＝上の承認とブランチの決まりを通ったもの）にしか渡らない。

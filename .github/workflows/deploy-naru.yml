@@ -92,6 +92,8 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    # 本番と開発で GitHub の Environment を分ける（本番だけの Secrets・承認・使えるブランチの決まりを付けられる。docs/DEPLOY_NARU.md）
+    environment: ${{ inputs.target == 'prod' && 'naru-prod' || 'naru-dev' }}
     concurrency:
       # 同じ環境への配備・管理を同時に動かさない
       group: deploy-naru-${{ inputs.target }}
@@ -109,6 +111,8 @@ jobs:
           PROD_USER: ${{ secrets.NARU_PROD_DEPLOY_USER }}
           PROD_KEY: ${{ secrets.NARU_PROD_DEPLOY_SSH_KEY }}
           PROD_PORT: ${{ secrets.NARU_PROD_DEPLOY_SSH_PORT || '22' }}
+          DEV_HOST_KEY: ${{ secrets.NARU_DEV_SSH_HOST_KEY }}
+          PROD_HOST_KEY: ${{ secrets.NARU_PROD_SSH_HOST_KEY }}
         run: |
           if [ "$TARGET" = "prod" ]; then H="$PROD_HOST"; U="$PROD_USER"; K="$PROD_KEY"; P="$PROD_PORT"; N="NARU_PROD_DEPLOY_HOST・NARU_PROD_DEPLOY_USER・NARU_PROD_DEPLOY_SSH_KEY"
           else H="$DEV_HOST"; U="$DEV_USER"; K="$DEV_KEY"; P="$DEV_PORT"; N="NARU_DEV_DEPLOY_HOST・NARU_DEV_DEPLOY_USER・NARU_DEV_DEPLOY_SSH_KEY"; fi
@@ -128,8 +132,23 @@ jobs:
           fi
           echo "使う鍵の指紋（公開鍵）: $(ssh-keygen -lf ~/.ssh/deploy_key.pub | awk '{print $2, $NF}')"
           echo "  サーバーで ssh-keygen -lf ~/.ssh/authorized_keys を実行して、同じ指紋の行があるか見比べられます"
-          ssh-keyscan -p "$P" -H "$H" >> ~/.ssh/known_hosts 2>/dev/null
-          [ -s ~/.ssh/known_hosts ] || { echo "ERROR: サーバーに届きません（ホスト名の Secrets か SSH のポートを確かめてください）"; exit 1; }
+          # サーバーのホスト鍵。Secrets に登録してあれば、それだけを信じる（なりすましたサーバーへはつながない）
+          if [ "$TARGET" = "prod" ]; then HK="$PROD_HOST_KEY"; HKN="NARU_PROD_SSH_HOST_KEY"; else HK="$DEV_HOST_KEY"; HKN="NARU_DEV_SSH_HOST_KEY"; fi
+          : > ~/.ssh/known_hosts
+          if [ -n "$HK" ]; then
+            if [ "$P" = "22" ]; then HN="$H"; else HN="[$H]:$P"; fi
+            # 1 行に「鍵の種類 鍵」（例：ssh-ed25519 AAAA…）。先頭にホスト名が付いていても、うしろの 2 つだけを使う
+            printf '%s\n' "$HK" | tr -d '\r' | grep -oE '(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+) +[A-Za-z0-9+/=]+' | while read -r T B; do echo "$HN $T $B"; done >> ~/.ssh/known_hosts
+            [ -s ~/.ssh/known_hosts ] || { echo "ERROR: $HKN の形が読めません（サーバーの /etc/ssh/ssh_host_ed25519_key.pub の中身「ssh-ed25519 AAAA…」を入れてください）"; exit 1; }
+            if ! ssh-keyscan -p "$P" "$H" 2>/dev/null | awk '{print $2, $3}' | grep -qxFf <(awk '{print $2, $3}' ~/.ssh/known_hosts); then
+              echo "ERROR: サーバーのホスト鍵が、登録してある $HKN と合いません（サーバーを入れ替えた・鍵を作り直したなら Secrets を直す。心当たりがなければ、つながずに原因を確かめてください）"; exit 1
+            fi
+            echo "ホスト鍵: 登録してある鍵（$HKN）と合いました"
+          else
+            ssh-keyscan -p "$P" -H "$H" >> ~/.ssh/known_hosts 2>/dev/null
+            [ -s ~/.ssh/known_hosts ] || { echo "ERROR: サーバーに届きません（ホスト名の Secrets か SSH のポートを確かめてください）"; exit 1; }
+            echo "::notice::ホスト鍵は固定していません（$HKN が未登録）。その場で受け取った鍵を信じてつないでいます。登録のしかたは docs/DEPLOY_NARU.md"
+          fi
           # 先に入れるか確かめる（入れないときに、理由を分かる形で止める）
           if ! ssh -v -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -p "$P" "$U@$H" true 2> ~/.ssh/err.txt; then
             # 理由の手がかりだけ出す（ホスト名・ユーザー名の入る行は出さない）

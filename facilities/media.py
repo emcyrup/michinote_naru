@@ -108,4 +108,7 @@ class ProtectedMediaView(View):
         if ext != '.pdf':
             # 万一ブラウザが中身を開いても、スクリプトを動かさない（PDF は、ブラウザの表示の部品が動かなくなるので付けない）
             resp['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        else:
+            resp._csp_config = {}      # 画面用の決まり（settings.SECURE_CSP）も付けない
+            resp._csp_ro_config = {}
         return resp
