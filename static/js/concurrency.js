@@ -45,8 +45,12 @@
       host.insertBefore(el, host.firstChild);
     }
     var names = others.map(function (o) { return o.name + '（' + o.since + ' から）'; }).join('、');
-    el.innerHTML = '<i class="bi bi-people-fill me-1"></i>' + names + ' も同じ画面を編集中です。' +
-      '同時に保存すると、あとから保存するときに確認が出ます。';
+    // 名前は文字として入れる（職員の表示名に記号が入っていても、画面の部品として解釈させない）
+    el.textContent = '';
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-people-fill me-1';
+    el.appendChild(icon);
+    el.appendChild(document.createTextNode(names + ' も同じ画面を編集中です。同時に保存すると、あとから保存するときに確認が出ます。'));
   }
   function watch(form) {
     var t = target(form);

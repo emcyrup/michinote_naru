@@ -27,7 +27,7 @@
             </div>
             <div class="d-flex gap-1">
               <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editTpl{{ t.pk }}"><i class="bi bi-pencil"></i></button>
-              <form method="post" action="{% url 'records:template_delete' t.pk %}" onsubmit="return confirm('「{{ t.name }}」を削除しますか？');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form>
+              <form method="post" action="{% url 'records:template_delete' t.pk %}" onsubmit="return confirm('「{{ t.name|escapejs }}」を削除しますか？');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button></form>
             </div>
           </div>
           {% if t.activity_aim %}<div class="small"><strong>めあて：</strong>{{ t.activity_aim }}</div>{% endif %}

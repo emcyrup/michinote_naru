@@ -8,11 +8,13 @@ from pathlib import Path
 from django.utils import timezone
 
 _MAX_EXT = 10
+# ブラウザが開くとスクリプトが動きうる種類。拡張子を外して保存する（配信の側でも、画像と PDF 以外は開かせない。facilities/media.py）
+_ACTIVE_EXTS = {'.html', '.htm', '.xhtml', '.shtml', '.svg', '.svgz', '.xml', '.js', '.mjs', '.css', '.php', '.swf'}
 
 
 def _name(prefix, filename, dated=True):
     ext = Path(filename or '').suffix.lower()[:_MAX_EXT]
-    if not ext.replace('.', '').isalnum():
+    if not ext.replace('.', '').isalnum() or ext in _ACTIVE_EXTS:
         ext = ''
     if dated:
         return f'{prefix}/{timezone.now():%Y/%m}/{uuid.uuid4().hex}{ext}'

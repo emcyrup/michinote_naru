@@ -39,7 +39,7 @@
     <select name="color" aria-label="色">{% for value, label in colors %}<option value="{{ value }}"{% if value == p.color %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
     <label><input type="checkbox" name="is_active"{% if p.is_active %} checked{% endif %}> 使う</label>
     <button type="submit" name="action" value="pattern_save" class="btn btn-sm btn-primary">保存</button>
-    <button type="submit" name="action" value="pattern_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ p.name }}」を消します。よろしいですか？');">消す</button>
+    <button type="submit" name="action" value="pattern_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ p.name|escapejs }}」を消します。よろしいですか？');">消す</button>
   </form>
   {% empty %}
   <form method="post" class="my-2">{% csrf_token %}<input type="hidden" name="tab" value="patterns">
@@ -69,7 +69,7 @@
     <label>並び順 <input type="number" name="order" value="{{ m.order }}" min="0" max="999" class="w-num"></label>
     <label><input type="checkbox" name="is_active"{% if m.is_active %} checked{% endif %}> 載せる</label>
     <button type="submit" name="action" value="member_save" class="btn btn-sm btn-primary">保存</button>
-    <button type="submit" name="action" value="member_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ m.name }}」を消します。よろしいですか？');">消す</button>
+    <button type="submit" name="action" value="member_delete" class="btn btn-sm btn-outline-danger" onclick="return confirm('「{{ m.name|escapejs }}」を消します。よろしいですか？');">消す</button>
   </form>
   {% endfor %}
   <form method="post" class="ss-row ss-new">{% csrf_token %}<input type="hidden" name="tab" value="members">

@@ -570,7 +570,7 @@
         <i class="bi bi-pencil"></i>
       </button>
       <form method="post" action="{% url 'facilities:activity_tag_delete' tag.pk %}"
-            onsubmit="return confirm('「{{ tag.name }}」を削除しますか？')">
+            onsubmit="return confirm('「{{ tag.name|escapejs }}」を削除しますか？')">
         {% csrf_token %}
         <button type="submit" class="btn btn-outline-danger btn-tag-action">
           <i class="bi bi-trash"></i>
@@ -617,7 +617,7 @@
         <i class="bi bi-pencil"></i>
       </button>
       <form method="post" action="{% url 'facilities:support_tag_delete' tag.pk %}"
-            onsubmit="return confirm('「{{ tag.name }}」を削除しますか？')">
+            onsubmit="return confirm('「{{ tag.name|escapejs }}」を削除しますか？')">
         {% csrf_token %}
         <button type="submit" class="btn btn-outline-danger btn-tag-action">
           <i class="bi bi-trash"></i>
@@ -663,7 +663,7 @@
                 <form method="post" action="{% url 'ai_assist:document_index' d.pk %}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='処理中…';">
                   {% csrf_token %}<button class="btn btn-sm {% if d.is_indexed %}btn-outline-secondary{% else %}btn-primary{% endif %}">{% if d.is_indexed %}再ベクトル化{% else %}ベクトル化する{% endif %}</button>
                 </form>
-                <form method="post" action="{% url 'ai_assist:document_delete' d.pk %}" onsubmit="return confirm('「{{ d.title }}」を削除しますか？');">
+                <form method="post" action="{% url 'ai_assist:document_delete' d.pk %}" onsubmit="return confirm('「{{ d.title|escapejs }}」を削除しますか？');">
                   {% csrf_token %}<button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                 </form>
               </div>

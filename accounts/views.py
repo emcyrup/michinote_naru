@@ -294,6 +294,8 @@ class StaffUpdateView(AdminOnlyMixin, View):
     def post(self, request, pk):
         from .forms import StaffUpdateForm
         u = get_object_or_404(StaffAccount, pk=pk, facility=request.user.facility)
+        if (u.is_superuser or u.is_developer) and not request.user.is_superuser and u != request.user:
+            raise Http404
         form = StaffUpdateForm(request.POST, instance=u)
         if not form.is_valid():
             messages.error(request, '入力内容を確認してください：' + '；'.join(f'{k}: {v[0]}' for k, v in form.errors.items()))
@@ -310,6 +312,11 @@ class StaffUpdateView(AdminOnlyMixin, View):
         if pw:
             u.set_password(pw)
             u.save(update_fields=['password'])
+        if pw or not u.is_active:
+            # パスワードを変えた・無効にした：スマホのアプリのログインも切る（盗まれた端末が使えたままにならないように）
+            from mobile_api.models import MobileToken
+            MobileToken.revoke_all(u)
+        if pw:
             note = '（パスワードを再設定しました）'
         else:
             note = ''
