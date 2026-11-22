@@ -11,7 +11,7 @@
 | 入り方 | **メールアドレスとパスワード**。アカウントは職員が作る（保護者は自分では登録できない） |
 | LINE | 保留。いまの「公式 LINE から開く保護者ページ」（`/family/…`。`family/views.py` の `FamilyMixin`）は残してあるが、成の環境では LINE連携がオフなので開けない |
 | 環境 | 開発 `https://st-naru-family.ai-labo.cloud/`・本番 `https://naru-family.ai-labo.cloud/`（Gunicorn 8050・置き場所 `~/michinotenarufamily`） |
-| 配備 | Actions「Deploy (naru)」→ `app=family`。手順は `docs/DEPLOY_NARU.md`。`config.settings_family` で起動し、`SECRET_KEY` は職員向けと同じ値になる（配備が入れる）。**配備の前に、ブランチへ `main` を取り込む**（起動のスクリプト `deploy/venv-deploy.sh` が新しい版であること）。本番への配備は、依頼者（リポジトリの持ち主）が指示したときだけ |
+| 配備 | Actions「Deploy (naru)」→ `app=family`。手順は `docs/DEPLOY_NARU.md`。`config.settings_family` で起動し、`SECRET_KEY` は職員向けと同じ値になる（配備が入れる）。**配備の前に、ブランチへ `main` を取り込む**（起動のスクリプト `deploy/venv-deploy.sh` が新しい版であること）。**本番の保護者向け（`target=prod`・`app=family`）は、保護者アプリの開発の担当も配備してよい**（2026-11-22、依頼者の許可。条件は下の「本番へ配備するとき」）。職員向けの本番は、依頼者（リポジトリの持ち主）が指示したときだけ |
 
 ## 守ってほしいこと
 
@@ -20,6 +20,21 @@
 - **ほかの家庭のものが見えないようにする。** 子どもは必ず `accounts.session_context()` が返した中から選ぶ。URL やフォームで受けた子どもの番号は、そのまま使わない。
 - 保護者の画面の応答には、端末に残さない設定（`Cache-Control: no-store`）を付ける。いまの保護者ページは `family/views.py` の `_no_store` で付けています。
 - 秘密の値・利用者の実データを、リポジトリ・Actions のログに入れない（このリポジトリは公開）。
+
+## 本番へ配備するとき
+
+保護者向けの本番（`https://naru-family.ai-labo.cloud/`）は、保護者アプリの開発の担当が、自分の作業の中で配備できます（そのつど依頼者に確かめなくてよい）。
+
+1. `family` に最新の `main` を取り込み、テストを通す（`SECRET_KEY=test-key DEBUG=True python manage.py test --parallel 4`）。
+2. Actions「Deploy (naru)」をブランチ `family` で、`target=dev`・`app=family` にして実行する。開発（`https://st-naru-family.ai-labo.cloud/`）で画面を確かめる。
+3. 同じく `target=prod`・`app=family` で実行する。最後の「Health check」まで通ったことを確かめる。
+4. Notion の更新履歴に 1 行残す。
+
+できないこと：
+
+- **職員向けの本番（`app=staff`）の配備**。依頼者が指示したときだけです。
+- **DB の形を変える変更（migration）を含む配備**。先に `main` に入れて、職員向けの本番が配備されてからです（そうでないと、保護者向けの配備は止まります）。
+- 切り戻すとき：Deploy (naru) の `ref` に、前のコミットの番号を入れて実行します（番号は Manage (naru) → `app=family`・`task=status` に出ます）。
 
 ## アカウントとひも付け（`family/accounts.py`）
 

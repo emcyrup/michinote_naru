@@ -22,6 +22,7 @@
 | 置き場所／Python の環境 | `~/michinotenarufamily`／`~/envnarufamily` | 同じ |
 | DB・写真や書類の置き場所 | 職員向けと共用（`naru_app`・`~/michinotenaru/media`） | 職員向けと共用（`naru_app_prod`・`~/michinotenaru/media`） |
 | 配備できるブランチ | どれでも | `main` か `family` |
+| 配備してよい人 | 開発の担当 | 依頼者の指示があったとき。**保護者アプリの開発の担当も、自分の作業の中で配備してよい**（2026-11-22 の許可。条件は `CLAUDE.md` の「守ること」・`docs/FAMILY_APP.md`） |
 
 - **DB の形（migration）は職員向け（`main`）の配備が決めます。** 保護者向けの配備は migrate をしません。保護者向けのブランチで migration を足したら、先に `main` に取り込んで `app=staff` を配備してから、`app=family` を配備します（DB に無い migration があると、配備は止まります）。
 - 保護者向けは、職員向けを配備したあとでないと配備できません。
