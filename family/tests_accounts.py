@@ -42,7 +42,7 @@ class FamilyAccountTests(TestCase):
     # ---- ひも付け
     def test_siblings_share_one_account_and_parents_get_their_own(self):
         a1, created1 = accounts.link_guardian(self.mother_taro, self.staff)
-        a2, created2 = accounts.link_guardian(self.mother_hana, self.staff)
+        a2, created2 = accounts.link_guardian(self.mother_hana, self.staff, confirm=True)
         a3, _ = accounts.link_guardian(self.father_taro, self.staff)
         self.assertTrue(created1)
         self.assertFalse(created2)
@@ -87,7 +87,7 @@ class FamilyAccountTests(TestCase):
 
     def test_left_children_are_not_listed(self):
         account = self.ready(self.mother_taro)
-        accounts.link_guardian(self.mother_hana, self.staff)
+        accounts.link_guardian(self.mother_hana, self.staff, confirm=True)
         self.hana.status = Beneficiary.STATUS_INACTIVE
         self.hana.save()
         self.assertEqual([g.beneficiary for g in accounts.guardians_of(account)], [self.taro])
@@ -157,7 +157,7 @@ class FamilyAccountTests(TestCase):
     # ---- 保護者アプリからの記録（いまある関数に、返ってきた guardian をそのまま渡す）
     def test_records_from_the_app_keep_the_sender_account(self):
         account = self.ready(self.mother_taro)
-        accounts.link_guardian(self.mother_hana, self.staff)
+        accounts.link_guardian(self.mother_hana, self.staff, confirm=True)
         ctx = accounts.session_context(account, child_id=self.hana.pk)
         self.assertEqual(ctx['child'], self.hana)
         self.assertEqual(ctx['children'], [self.taro, self.hana])
@@ -245,3 +245,80 @@ class FamilyAccountTests(TestCase):
         html = self.client.get('/home/').content.decode()
         for name in ('family:staff_book', 'family:staff_inbox', 'family:staff_notice'):
             self.assertIn(f'href="{reverse(name)}"', html, name)
+
+    # ---- 2026-11-22 セキュリティ診断の続き
+    def test_same_email_needs_confirmation_before_joining_another_family(self):
+        """同じメールアドレスのアカウントがもうあるとき：だれの子のアカウントかを見せて、確かめてから結びつける（入れまちがいで別の家庭に見えないように）"""
+        account, _ = accounts.link_guardian(self.mother_taro, self.staff)
+        with self.assertRaises(accounts.NeedsConfirm) as cm:
+            accounts.link_guardian(self.mother_hana, self.staff)
+        self.assertIn('見本 太郎', str(cm.exception))
+        self.assertFalse(FamilyAccountLink.objects.filter(guardian=self.mother_hana).exists())
+        # 職員の画面：1 回目は知らせるだけ。同じ保護者でもう一度押すと結びつく
+        self.client.force_login(self.staff)
+        url = reverse('family:staff_account', args=[self.mother_hana.pk])
+        html = self.client.post(url, {'action': 'create'}, follow=True).content.decode()
+        self.assertIn('もうあります', html)
+        self.assertIn('見本 太郎', html)
+        self.assertFalse(FamilyAccountLink.objects.filter(guardian=self.mother_hana).exists())
+        html = self.client.post(url, {'action': 'create'}, follow=True).content.decode()
+        self.assertIn('同じメールアドレスのアカウント', html)
+        self.assertEqual(FamilyAccountLink.objects.get(guardian=self.mother_hana).account, account)
+
+    def test_reissuing_or_stopping_kills_earlier_links(self):
+        account, _ = accounts.link_guardian(self.mother_taro, self.staff)
+        t1 = accounts.setup_url(account).rstrip('/').rsplit('/', 1)[1]
+        account.refresh_from_db()
+        self.assertEqual(accounts.check_setup_token(t1), account)
+        t2 = accounts.setup_url(account).rstrip('/').rsplit('/', 1)[1]            # 出し直す
+        self.assertIsNone(accounts.check_setup_token(t1))                         # 前のリンクは使えない
+        self.assertEqual(accounts.check_setup_token(t2), FamilyAccount.objects.get(pk=account.pk))
+        accounts.set_active(FamilyAccount.objects.get(pk=account.pk), False)
+        accounts.set_active(FamilyAccount.objects.get(pk=account.pk), True)       # 止めて戻しても、前のリンクは使えないまま
+        self.assertIsNone(accounts.check_setup_token(t2))
+        # 合い言葉の中に、パスワードのハッシュは入っていない
+        fresh = FamilyAccount.objects.get(pk=account.pk)
+        from django.core import signing
+        data = signing.loads(accounts.setup_token(fresh), salt=accounts.SETUP_SALT)
+        self.assertNotIn(data['s'], fresh.password)
+
+    def test_password_reset_link_is_for_admin_and_manager_only(self):
+        """パスワードを設定ずみのアカウントのリンク（＝決め直し）は、管理者と児発管だけ。出したことは記録に残る"""
+        from accounts.models import SecurityAlert
+        account = self.ready(self.mother_taro)
+        worker = StaffAccount.objects.create_user('acc_staff', password='pw12345678', facility=self.f, role=StaffAccount.ROLE_STAFF)
+        url = reverse('family:staff_account', args=[self.mother_taro.pk])
+        self.client.force_login(worker)
+        for action in ('link', 'mail'):
+            html = self.client.post(url, {'action': action}, follow=True).content.decode()
+            self.assertIn('管理者と児発管だけ', html)
+            self.assertNotIn('/account/setup/', html)
+        self.assertEqual(accounts.authenticate('haha@example.test', GOOD_PW), account)       # パスワードはそのまま
+        # まだパスワードを決めていないアカウントのリンクは、職員も出せる（最初の案内）
+        accounts.link_guardian(self.father_taro, self.staff)
+        html = self.client.post(reverse('family:staff_account', args=[self.father_taro.pk]), {'action': 'link'}, follow=True).content.decode()
+        self.assertIn('/account/setup/', html)
+        # 児発管は出せる。記録に残る（メールアドレス・リンクは書かない）
+        manager = StaffAccount.objects.create_user('acc_jihatsu', password='pw12345678', facility=self.f, role=StaffAccount.ROLE_CHILD_DEV_MANAGER)
+        self.client.force_login(manager)
+        html = self.client.post(url, {'action': 'link'}, follow=True).content.decode()
+        self.assertIn('/account/setup/', html)
+        row = SecurityAlert.objects.filter(facility=self.f).order_by('-pk').first()
+        self.assertIn('パスワードを決め直すリンクを出しました', row.text)
+        self.assertNotIn('example.test', row.text)
+        self.assertNotIn('/account/setup/', row.text)
+
+    def test_wrong_password_count_and_timing_guard(self):
+        from unittest import mock as m
+        account, _ = accounts.link_guardian(self.mother_taro, self.staff)
+        # パスワード未設定のアカウントでも、ハッシュの計算をする（招待ずみかどうかを、応答の速さから読み取られないように）
+        with m.patch('family.accounts._burn') as burn:
+            self.assertIsNone(accounts.authenticate('haha@example.test', 'nandemo'))
+        self.assertTrue(burn.called)
+        accounts.set_password(account, GOOD_PW)
+        for _ in range(3):
+            accounts.authenticate('haha@example.test', 'chigau')
+        self.assertEqual(FamilyAccount.objects.get(pk=account.pk).failed_count, 3)
+        self.assertEqual(accounts.authenticate('haha@example.test', GOOD_PW), account)
+        self.assertEqual(FamilyAccount.objects.get(pk=account.pk).failed_count, 0)
+

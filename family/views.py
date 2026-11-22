@@ -345,9 +345,27 @@ class StaffAccountView(StaffGuardianMixin, View):
         action = request.POST.get('action')
         link = getattr(g, 'family_link', None)
         account = link.account if link is not None else None
+        from accounts import security
+        from accounts.models import StaffAccount
+
+        def log(text):
+            # だれが・どの保護者のアカウントに何をしたかを、職員・運用管理の記録に残す（メールアドレスは書かない）
+            security.admin_action(request, f'保護者「{g.full_name}」（{g.beneficiary.full_name} さん）の保護者アプリのアカウント：{text}')
+
+        senior = request.user.is_superuser or request.user.role in (StaffAccount.ROLE_ADMIN, StaffAccount.ROLE_CHILD_DEV_MANAGER)
         try:
             if action == 'create':
-                account, created = accounts.link_guardian(g, request.user)
+                # 同じメールアドレスのアカウントがもうあるときは、1 回目は知らせるだけ。同じ保護者でもう一度押すと結びつける
+                key = 'family_account_confirm'
+                confirm = request.session.pop(key, None) == g.pk
+                try:
+                    account, created = accounts.link_guardian(g, request.user, confirm=confirm)
+                except accounts.NeedsConfirm as e:
+                    request.session[key] = g.pk
+                    messages.warning(request, str(e))
+                    return self.back(g)
+                if not created:
+                    log('同じメールアドレスのアカウントに結びつけました')
                 if created:
                     messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを作りました（{account.email}）。'
                                               '「パスワード設定のリンク」を出して、保護者へ渡してください。')
@@ -356,10 +374,15 @@ class StaffAccountView(StaffGuardianMixin, View):
                                               'きょうだいを 1 つのアカウントで見られます。')
             elif account is None:
                 messages.error(request, 'この保護者には、まだ保護者アプリのアカウントがありません。')
+            elif action in ('link', 'mail') and account.has_password and not senior:
+                # パスワードが決まっているアカウントのリンクは、パスワードの決め直しになる（開いた人が、その保護者として入れる）
+                messages.error(request, 'この保護者はパスワードを設定ずみです。パスワードを決め直すリンクを出せるのは、管理者と児発管だけです。')
             elif action == 'link':
                 url = accounts.setup_url(account) if account.is_active else ''
                 if url:
-                    messages.success(request, f'{g.full_name} さんのパスワード設定のリンクです（{accounts.SETUP_DAYS} 日以内・1 回かぎり）。'
+                    if account.has_password:
+                        log('パスワードを決め直すリンクを出しました')
+                    messages.success(request, f'{g.full_name} さんのパスワード設定のリンクです（{accounts.SETUP_DAYS} 日以内・1 回かぎり。前に出したリンクは使えなくなりました）。'
                                               f'保護者へ渡してください： {url}')
                 elif not account.is_active:
                     messages.error(request, 'このアカウントは停止中です。先に「また使えるようにする」を押してください。')
@@ -368,15 +391,19 @@ class StaffAccountView(StaffGuardianMixin, View):
             elif action == 'mail':
                 ok, why = accounts.send_setup_mail(account) if account.is_active else (False, 'このアカウントは停止中です')
                 if ok:
+                    if account.has_password:
+                        log('パスワードを決め直すリンクをメールで送りました')
                     messages.success(request, f'{account.email} へ、パスワード設定のリンクを送りました。')
                 else:
                     messages.error(request, f'{why}。「パスワード設定のリンク」を出して、保護者へ渡してください。')
             elif action in ('stop', 'resume'):
                 accounts.set_active(account, action == 'resume')
+                log('また使えるようにしました' if action == 'resume' else '止めました')
                 messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを'
                                           + ('また使えるようにしました。' if action == 'resume' else '止めました（入れなくなります。記録は残ります）。'))
             elif action == 'unlink':
                 accounts.unlink_guardian(g)
+                log('外しました')
                 messages.success(request, f'{g.full_name} さんを保護者アプリのアカウントから外しました。')
             else:
                 messages.error(request, '操作が分かりませんでした。')

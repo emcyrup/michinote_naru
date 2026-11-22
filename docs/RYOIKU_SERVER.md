@@ -208,7 +208,7 @@ exit
 
 | 種別 | ホスト名 | 値 |
 |---|---|---|
-| A | `app`（ドメインそのものなら `@`） | `34.104.220.242`（固定 IP `ryoiku-ip`） |
+| A | `app`（ドメインそのものなら `@`） | `<サーバーの固定 IP>`（固定 IP `ryoiku-ip`） |
 
 Cloudflare を使うときはプロキシ（オレンジの雲）を **オフ**。DuckDNS は画面の「current ip」に固定 IP を入れて update。
 
@@ -228,7 +228,7 @@ sudo -u deploy bash -lc "cd /opt/ryoiku && ./enable-https.sh <ドメイン>"
 
 - `.env` の `DOMAIN`・`DJANGO_ALLOWED_HOSTS`・`CSRF_TRUSTED_ORIGINS`・`SECURE_SSL_REDIRECT=True`・`RESERVATION_SITE_URL`・`CADDYFILE=Caddyfile.https`・`LEGACY_HOST=<固定IP>` を書き換え（前の `.env` は `.env.bak-<日時>` に残る）、Caddy が Let's Encrypt の証明書を取ります（1分ほど）。
 - 「OK: https://<ドメイン>/ で開けます」と出れば完了。
-- **これまでの `http://34.104.220.242/…` は、同じパスのまま `https://<ドメイン>/…` へ転送**されます。保護者に配った顧客ページのアドレスやブックマークもそのまま使えます（これから配るアドレスは画面上で https のものに変わります）。
+- **これまでの `http://<サーバーの固定 IP>/…` は、同じパスのまま `https://<ドメイン>/…` へ転送**されます。保護者に配った顧客ページのアドレスやブックマークもそのまま使えます（これから配るアドレスは画面上で https のものに変わります）。
 - 証明書の更新は Caddy が自動で行います。
 
 #### ⑤ 仕上げ
@@ -277,7 +277,7 @@ iPhone・iPad のブラウザ（Safari も Chrome も中身は同じ）の音声
 1. Cloud Console → 「API とサービス」→「ライブラリ」→ **Cloud Speech-to-Text API** → 「有効にする」。
 2. 「API とサービス」→「認証情報」→「認証情報を作成」→「API キー」。作ったキーの「キーを編集」で次の2つを制限する。
    - **API の制限**：「キーを制限」→ **Cloud Speech-to-Text API** だけ
-   - **アプリケーションの制限**：「IP アドレス」→ ゆあーずのサーバーの固定 IP（`34.104.220.242`）。音声はサーバーから Google に送るので、ほかからは使えないようにする
+   - **アプリケーションの制限**：「IP アドレス」→ ゆあーずのサーバーの固定 IP（`<サーバーの固定 IP>`）。音声はサーバーから Google に送るので、ほかからは使えないようにする
 3. キーは**チャットや Notion に貼らない**。次の手順でサーバーの `.env` にだけ入れる。
 
 **サーバー側**

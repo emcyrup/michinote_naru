@@ -4,7 +4,7 @@
 
 プロバイダの案内（「開発環境のご案内」）の前提:
 
-- Ubuntu、SSH は配布された `.pem` でログイン（例: ユーザー `3piece_user4`、ホーム `/home/dev4`）。**sudo なし**、自分のホーム以外は触れない
+- Ubuntu、SSH は配布された `.pem` でログイン（例: ユーザー `<SSH ユーザー名>`、ホーム `/home/dev4`）。**sudo なし**、自分のホーム以外は触れない
 - Python の venv は **`~/env`** にプロバイダが作成済み。作業前に `source ~/env/bin/activate`
 - nginx・ドメイン・SSL は**プロバイダが一括管理**（自分では触らない）。アプリは割り当てポートで `127.0.0.1` にリッスンし、nohup 等でバックグラウンド起動する
 - PostgreSQL の DB・ユーザー・パスワードはプロバイダが発行。**DB のダンプはプロバイダ側で自動化**（自前の cron バックアップは不要）
@@ -28,7 +28,7 @@
 ## 1. サーバーに入って確認する（1回）
 
 ```bash
-ssh -i id_rsa_3piece4.pem 3piece_user4@15.168.83.1
+ssh -i <配布された鍵>.pem <SSH ユーザー名>@<開発サーバーの IP>
 source ~/env/bin/activate
 python --version        # 3.12 以上が必要（Django 6.1）。3.11 以下ならプロバイダに python3.12 以上の venv を依頼
 git --version
@@ -105,8 +105,8 @@ python manage.py seed_demo --reset     # 架空データ（実データがあれ
 
 | Secret | 値 |
 |---|---|
-| `DEV_DEPLOY_HOST` | `15.168.83.1` |
-| `DEV_DEPLOY_USER` | 配布された SSH ユーザー名（例 `3piece_user4`） |
+| `DEV_DEPLOY_HOST` | `<開発サーバーの IP>` |
+| `DEV_DEPLOY_USER` | 配布された SSH ユーザー名（例 `<SSH ユーザー名>`） |
 | `DEV_DEPLOY_SSH_KEY` | 配布された `.pem` の中身（`-----BEGIN` から `END ...-----` まで） |
 | `DEV_DEPLOY_SSH_PORT` | 22 以外のときだけ |
 | `DEV_APP_DIR` | `~/michinotedemo` 以外に置いたときだけ |

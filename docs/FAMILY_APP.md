@@ -53,6 +53,11 @@
 | `accounts.set_password(account, raw)` | パスワードを決める。短い・ありふれている・メールアドレスに似ている ときは `ValidationError`（`e.messages` を画面に出す） |
 | `accounts.session_context(account, child_id=None)` | 画面で使うひとそろい：`facility`・`children`（在籍中の子）・`child`（いま見ている子）・`guardian`（その子の保護者の記録）。使えないアカウントは `None` |
 
+2026-11-22 の変更（セキュリティ診断）：
+
+- パスワード設定のリンクは、最後に出した 1 本だけが使える。合い言葉の作り（`family/accounts.py` の `_stamp`）が変わったので、**職員向けと保護者向けは、同じ版の `main` を取り込んだもので動かす**（片方だけ古いと、出したリンクが開けない）。`check_setup_token`・`set_password`・`authenticate`・`session_context` の呼び方は変わらない。
+- `link_guardian(guardian, staff, confirm=False)`：同じメールアドレスのアカウントがほかの子にもう結びついているときは `NeedsConfirm`（職員の画面が確かめる）。保護者アプリからは呼ばない。
+
 **保護者アプリで用意する画面**
 
 - `GET/POST /account/setup/<token>/`：パスワードを決める画面。職員が出すリンク（`.env` の `FAMILY_APP_URL` ＋このパス）の行き先です。パスは `accounts.SETUP_PATH` で決めてあるので、変えるときは `main` も直します。

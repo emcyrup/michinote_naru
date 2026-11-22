@@ -1308,7 +1308,8 @@ class PaperScanReviewView(LoginRequiredMixin, View):
             'candidate_ids': d.get('candidate_ids') or [],
             'staff': facility.staff_accounts.filter(is_active=True),
             'health_choices': DailyRecord.HEALTH_CHOICES,
-            'viewpoints_json': json.dumps(d.get('viewpoints') or [], ensure_ascii=False),
+            'viewpoints_json': json.dumps(d.get('viewpoints') or [], ensure_ascii=False)
+            .replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026'),   # <script> の中に入れるので、タグとして読まれる字は置き換える
             'ai_enabled': bool(settings.ANTHROPIC_API_KEY),
         })
 
