@@ -18,6 +18,11 @@ class StaffCreateForm(forms.ModelForm):
         }
         labels = {'username': 'ログインID', 'display_name': '表示名', 'role': '権限区分', 'ui_theme': '画面の見た目'}
 
+    def clean_password(self):
+        pw = self.cleaned_data.get('password') or ''
+        password_validation.validate_password(pw)      # 短い・ありふれている・数字だけ のパスワードは断る
+        return pw
+
 
 class StaffUpdateForm(forms.ModelForm):
     new_password = forms.CharField(label='新しいパスワード', required=False, min_length=8,
@@ -32,6 +37,12 @@ class StaffUpdateForm(forms.ModelForm):
             'ui_theme': forms.Select(attrs={'class': 'form-select'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+
+    def clean_new_password(self):
+        pw = self.cleaned_data.get('new_password') or ''
+        if pw:
+            password_validation.validate_password(pw, user=self.instance)
+        return pw
 
 
 class _PasswordPairMixin:

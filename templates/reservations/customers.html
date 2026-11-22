@@ -81,7 +81,7 @@
         </div>
       </form>
       <form method="post" id="delCustomer{{ c.pk }}" action="{% url 'reservations:customer_delete' c.pk %}"
-            onsubmit="return confirm('顧客「{{ c.name }}」を削除しますか？');">{% csrf_token %}</form>
+            onsubmit="return confirm('顧客「{{ c.name|escapejs }}」を削除しますか？');">{% csrf_token %}</form>
       <form method="post" id="reissueCustomer{{ c.pk }}"
             action="{% url 'reservations:customer_reissue' c.pk %}">{% csrf_token %}</form>
     </div>

@@ -122,16 +122,16 @@ class StaffManagementTests(TestCase):
         res = self.client.get(reverse('accounts:staff'))
         self.assertContains(res, 'stf')
         res = self.client.post(reverse('accounts:staff'), {'username': 'new1', 'display_name': '新人', 'role': 'staff',
-                                                           'ui_theme': 'large', 'password': 'secret123'})
+                                                           'ui_theme': 'large', 'password': 'hinata-no-niwa-21'})
         self.assertRedirects(res, reverse('accounts:staff'))
         u = StaffAccount.objects.get(username='new1')
         self.assertEqual((u.facility, u.ui_theme, u.display_name), (self.facility, 'large', '新人'))
-        self.assertTrue(u.check_password('secret123'))
+        self.assertTrue(u.check_password('hinata-no-niwa-21'))
         res = self.client.post(reverse('accounts:staff_update', args=[u.pk]),
-                               {'display_name': '新人2', 'role': 'office', 'ui_theme': 'standard', 'new_password': 'another99'})
+                               {'display_name': '新人2', 'role': 'office', 'ui_theme': 'standard', 'new_password': 'kumo-to-sora-88'})
         u.refresh_from_db()
         self.assertEqual((u.display_name, u.role, u.is_active), ('新人2', 'office', False))
-        self.assertTrue(u.check_password('another99'))
+        self.assertTrue(u.check_password('kumo-to-sora-88'))
         # 自分を無効にはできない
         self.client.post(reverse('accounts:staff_update', args=[self.admin.pk]), {'display_name': 'a', 'role': 'admin', 'ui_theme': 'standard'})
         self.admin.refresh_from_db()

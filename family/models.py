@@ -67,6 +67,8 @@ class FamilyAccount(models.Model):
     last_login_at = models.DateTimeField(null=True, blank=True, verbose_name='最後に入った日時')
     failed_count = models.PositiveSmallIntegerField(default=0, verbose_name='続けてまちがえた回数')
     locked_until = models.DateTimeField(null=True, blank=True, verbose_name='この時刻まで入れない')
+    # パスワード設定のリンクの版。リンクを出し直す・止めるたびに進めて、前のリンクを使えなくする
+    link_version = models.PositiveIntegerField(default=0, verbose_name='設定用のリンクの版')
 
     class Meta:
         verbose_name = '保護者アプリのアカウント'

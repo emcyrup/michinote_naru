@@ -135,9 +135,11 @@
       if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
       card.dataset.status = 'extracted';
       st.textContent = data.status; st.className = 'badge badge-status text-bg-success js-status';
-      sum.innerHTML = `<div><strong>${data.beneficiary_name || '（名前不明）'}</strong>　${data.date || '（日付不明）'}</div>` +
-        (data.activity_name ? `<div class="text-muted">${data.activity_name}</div>` : '') +
-        (data.unreadable ? `<div class="text-danger" style="font-size:0.75rem;">読めない箇所：${data.unreadable}</div>` : '');
+      // AI が紙から読み取った文は、文字として入れる（紙に書かれた記号を、画面の部品として解釈させない）
+      const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      sum.innerHTML = `<div><strong>${esc(data.beneficiary_name || '（名前不明）')}</strong>　${esc(data.date || '（日付不明）')}</div>` +
+        (data.activity_name ? `<div class="text-muted">${esc(data.activity_name)}</div>` : '') +
+        (data.unreadable ? `<div class="text-danger" style="font-size:0.75rem;">読めない箇所：${esc(data.unreadable)}</div>` : '');
       b.innerHTML = '<i class="bi bi-stars me-1"></i>読み直す';
     } catch (e) {
       st.textContent = '失敗'; st.className = 'badge badge-status text-bg-danger js-status';

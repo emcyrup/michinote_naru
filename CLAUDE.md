@@ -75,7 +75,7 @@
 
 ## 作業のしかた
 
-- テスト：`SECRET_KEY=test-key DEBUG=True python manage.py test --parallel 4`（2026-11-22 時点で 948 件 OK）
+- テスト：`SECRET_KEY=test-key DEBUG=True python manage.py test --parallel 4`（2026-11-22 時点で 960 件 OK）
 - 手元の見本：`python manage.py create_facility "見本" --admin naru --password '…' --preset houdei --demo` → `python manage.py family_page --facility 1`
 - 画面を変えたら、テストだけでなく実際のブラウザで動かして確かめる（保護者ページの送信が 403 になる不具合は、ブラウザで初めて見つかった）。
 - マイグレーションを足したら `makemigrations --check` を通す。利用者にひも付く表を足したら、利用者の重複のまとめ（`beneficiaries/merge.py`）がこわれないか確かめる。
