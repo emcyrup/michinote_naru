@@ -22,6 +22,7 @@
 | 置き場所／Python の環境 | `~/michinotenarufamily`／`~/envnarufamily` | 同じ |
 | DB・写真や書類の置き場所 | 職員向けと共用（`naru_app`・`~/michinotenaru/media`） | 職員向けと共用（`naru_app_prod`・`~/michinotenaru/media`） |
 | 配備できるブランチ | どれでも | `main` か `family` |
+| 配備してよい人 | 開発の担当 | 依頼者の指示があったとき。**保護者アプリの開発の担当も、自分の作業の中で配備してよい**（2026-11-22 の許可。条件は `CLAUDE.md` の「守ること」・`docs/FAMILY_APP.md`） |
 
 - **DB の形（migration）は職員向け（`main`）の配備が決めます。** 保護者向けの配備は migrate をしません。保護者向けのブランチで migration を足したら、先に `main` に取り込んで `app=staff` を配備してから、`app=family` を配備します（DB に無い migration があると、配備は止まります）。
 - 保護者向けは、職員向けを配備したあとでないと配備できません。
@@ -71,3 +72,11 @@
 | ログインのあと行ったり来たりする | nginx が `X-Forwarded-Proto: https` を付けていない。付けてもらうか、`.env` の `SECURE_SSL_REDIRECT=False` |
 | `venv を作れません` | サーバーに Python 3.12 以上が要る。プロバイダに `~/envnaru` を作ってもらう |
 | 画面のエラー | Manage (naru) → `error_log` |
+| ログインの記録の接続元がどれも `127.0.0.1` | nginx が接続元の IP（`X-Forwarded-For`）を渡していない。プロバイダに `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` を依頼。渡っていないと、IP ごとのロック（15 分に 20 回の失敗）が全員にまとめて効いてしまう |
+
+## 4. 安全のための決まり（2026-11-22 の診断から）
+
+- **ログインの一時ロックは、どの入口でも同じ**（職員のログイン画面・スマホアプリ用の API・管理画面）。同じユーザー名で 15 分に 5 回、同じ接続元で 20 回まちがえると 15 分受け付けない（`accounts/backends.py`・`accounts/security.py`）。
+- **接続元の IP は、`X-Forwarded-For` の末尾（nginx が足した値）を読む。** 先頭は送り手が書けるので使わない。nginx の前に CDN などをもう 1 段置いたら、`.env` に `TRUSTED_PROXY_COUNT=2`。
+- **Actions のログは公開。** `login_log` は、アドレスの `?` より後ろと、合い言葉・番号らしい部分を `***` に伏せて出す。配備が失敗したときに出すログの末尾も、日本語と長い数字を伏せる。
+- 診断をやり直すとき：Manage (naru) → `task=security_check`（読み取りだけ。サーバーの設定・権限と、外から見える応答）。

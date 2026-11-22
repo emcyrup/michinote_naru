@@ -9,8 +9,24 @@
   .cal-req { background: #fff6e2; border: 1px solid #e8b25a; border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; }
   .cal-req ul { margin: 6px 0 8px; padding-left: 1.1em; }
   .cal-edit { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
-  .cal-edit li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #eee9e0; }
+  .cal-edit li { padding: 6px 10px; border-top: 1px solid #eee9e0; scroll-margin-top: 80px; }
   .cal-edit li:first-child { border-top: 0; }
+  .cal-edit .ce-main { display: flex; align-items: center; gap: 8px; }
+  .cal-edit .ce-row + .ce-row { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e3ddd2; }
+  .cal-edit .ce-sub { color: #8a8378; font-weight: 400; font-size: .82rem; }
+  /* 詳しい内容を開く・閉じるボタン（↓／↑）。中身が入っているときは色を付ける */
+  .cal-edit .ce-more { flex: 0 0 auto; width: 40px; height: 40px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; color: #4d7ba8; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; }
+  .cal-edit .ce-more.has-detail { background: #e8f0fb; border-color: #4d7ba8; }
+  .cal-edit .ce-more[aria-expanded=true] { background: #4d7ba8; border-color: #4d7ba8; color: #fff; }
+  .cal-edit .ce-aud { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 6px 0 0 0; }
+  .cal-edit .ce-aud label { display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 3px 10px 3px 6px; border: 1px solid #d8d2c6; border-radius: 999px; font-size: .85rem; cursor: pointer; background: #fff; }
+  .cal-edit .ce-aud input { width: 18px; height: 18px; margin: 0; }
+  .cal-edit .ce-aud label:has(input:checked) { background: #e8f0fb; border-color: #4d7ba8; font-weight: 700; }
+  .cal-edit .ce-detail { margin-top: 6px; }
+  .cal-edit .ce-detail textarea { width: 100%; font-size: 1rem; padding: 8px; border: 1px solid #cfc8bb; border-radius: 8px; }
+  .cal-edit .ce-detail small { color: #8a8378; }
+  .cal-edit li:not(.has-plan) .ce-add { display: none; }
+  .cal-edit .ce-add { margin-top: 6px; border: 0; background: none; color: #4d7ba8; font-size: .85rem; padding: 2px 0; text-decoration: underline; }
   .cal-edit .d { flex: 0 0 4.6em; font-weight: 700; white-space: nowrap; }
   .cal-edit .is-sun .d { color: #c0392b; } .cal-edit .is-sat .d { color: #2c63b0; }
   .cal-edit label.c { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; margin: 0; font-size: .82rem; white-space: nowrap; cursor: pointer; }
@@ -44,16 +60,54 @@
   {% if editing %}
   <form method="post" id="cal-edit-form">
     {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}">
-    <div class="small text-muted mb-2">日付ごとに、休業日・活動の予定・お出かけ先を入れます。保護者ページのカレンダーにも同じものが出ます。持ち物・参加費などの詳しい内容は、カレンダーの日付を押して書きます。</div>
-    <ul class="cal-edit">
+    <div class="small text-muted mb-2">日付ごとに、休業日・活動の予定・お出かけ先を入れます。右の <i class="bi bi-chevron-down"></i> を押すと、詳しい内容（持ち物・参加費など）を書く欄が開きます。{% if notice_groups %}予定ごとに、見せる相手（全員か、グループ）を選べます。{% endif %}保護者のカレンダーにも同じものが出ます。</div>
+    {% if not notice_groups and features.family_page %}<div class="small text-muted mb-2">小学生・未就学など、グループごとに見せる予定を分けるには、先に <a href="{% url 'family:staff_notice_groups' %}">お知らせのグループ</a> を作ります。</div>{% endif %}
+    <ul class="cal-edit" id="cal-edit-list" data-max="{{ max_per_day }}">
       {% for c in days %}
-      <li class="{% if c.is_sun %}is-sun{% elif c.is_sat %}is-sat{% endif %}{% if c.is_closed %} is-closed{% endif %}">
-        <span class="d">{{ c.date.day }}日（{{ c.weekday }}）</span>
-        <label class="c"><input type="checkbox" name="c_{{ c.iso }}"{% if c.is_closed %} checked{% endif %}> 休業日</label>
-        <input type="text" name="t_{{ c.iso }}" value="{{ c.event.title|default:'' }}" maxlength="{{ title_max }}" placeholder="{{ c.holiday|default:'予定・お出かけ先' }}" aria-label="{{ c.date.day }}日の予定">
+      <li id="d-{{ c.iso }}" data-iso="{{ c.iso }}" data-day="{{ c.date.day }}" class="{% if c.is_sun %}is-sun{% elif c.is_sat %}is-sat{% endif %}{% if c.is_closed %} is-closed{% endif %}{% if c.label and c.events.0.title %} has-plan{% endif %}">
+        {% for r in c.rows %}
+        <div class="ce-row">
+          <div class="ce-main">
+            {% if forloop.first %}<span class="d">{{ c.date.day }}日（{{ c.weekday }}）</span>
+            <label class="c"><input type="checkbox" name="c_{{ c.iso }}"{% if c.is_closed %} checked{% endif %}> 休業日</label>
+            {% else %}<span class="d ce-sub">べつの予定</span>{% endif %}
+            <input type="text" name="t_{{ c.iso }}_{{ r.i }}" value="{{ r.title }}" maxlength="{{ title_max }}" placeholder="{% if forloop.first %}{{ c.holiday|default:'予定・お出かけ先' }}{% else %}予定・お出かけ先{% endif %}" aria-label="{{ c.date.day }}日の予定">
+            <button type="button" class="ce-more{% if r.detail %} has-detail{% endif %}" aria-expanded="false" aria-controls="m-{{ c.iso }}-{{ r.i }}" aria-label="{{ c.date.day }}日の詳しい内容を開く" title="詳しい内容（持ち物・参加費など）"><i class="bi bi-chevron-down"></i></button>
+          </div>
+          {% if notice_groups %}
+          <div class="ce-aud" role="group" aria-label="見せる相手">
+            <label><input type="checkbox" name="g_{{ c.iso }}_{{ r.i }}" value="all"{% if not r.gids %} checked{% endif %}> 全員</label>
+            {% for g in notice_groups %}<label><input type="checkbox" name="g_{{ c.iso }}_{{ r.i }}" value="{{ g.pk }}"{% if g.pk in r.gids %} checked{% endif %}> {{ g.name }}</label>{% endfor %}
+          </div>
+          {% endif %}
+          <div class="ce-detail" id="m-{{ c.iso }}-{{ r.i }}" hidden>
+            <textarea name="m_{{ c.iso }}_{{ r.i }}" rows="4" maxlength="{{ detail_max }}" placeholder="例：持ち物…水筒・帽子・タオル&#10;参加費…300 円（当日あつめます）" aria-label="{{ c.date.day }}日の詳しい内容">{{ r.detail }}</textarea>
+            <small>詳しい内容（持ち物・参加費など）。保護者がカレンダーの日付を押すと出ます。</small>
+          </div>
+        </div>
+        {% endfor %}
+        {% if notice_groups %}<button type="button" class="ce-add"{% if c.rows|length >= max_per_day %} hidden{% endif %}>＋ べつのグループ向けの予定を足す</button>{% endif %}
       </li>
       {% endfor %}
     </ul>
+    {# 足すときのひな形（__ISO__・__I__・__DAY__ を入れ替える） #}
+    <template id="ce-row-tpl">
+      <div class="ce-row">
+        <div class="ce-main">
+          <span class="d ce-sub">べつの予定</span>
+          <input type="text" name="t___ISO_____I__" value="" maxlength="{{ title_max }}" placeholder="予定・お出かけ先" aria-label="__DAY__日の予定">
+          <button type="button" class="ce-more" aria-expanded="false" aria-controls="m-__ISO__-__I__" aria-label="__DAY__日の詳しい内容を開く" title="詳しい内容（持ち物・参加費など）"><i class="bi bi-chevron-down"></i></button>
+        </div>
+        <div class="ce-aud" role="group" aria-label="見せる相手">
+          <label><input type="checkbox" name="g___ISO_____I__" value="all" checked> 全員</label>
+          {% for g in notice_groups %}<label><input type="checkbox" name="g___ISO_____I__" value="{{ g.pk }}"> {{ g.name }}</label>{% endfor %}
+        </div>
+        <div class="ce-detail" id="m-__ISO__-__I__" hidden>
+          <textarea name="m___ISO_____I__" rows="4" maxlength="{{ detail_max }}" placeholder="例：持ち物…水筒・帽子・タオル&#10;参加費…300 円（当日あつめます）" aria-label="__DAY__日の詳しい内容"></textarea>
+          <small>詳しい内容（持ち物・参加費など）。保護者がカレンダーの日付を押すと出ます。</small>
+        </div>
+      </div>
+    </template>
     <div class="cal-save">
       <button type="submit" name="action" value="save" class="btn btn-primary">保存する</button>
       <a href="?ym={{ ym }}" class="btn btn-outline-secondary">やめる</a>
@@ -64,7 +118,7 @@
   <div class="cal-legend">
     <span>数字は、その日に来る予定の人数</span>
     <span><i class="bi bi-info-circle-fill" style="border:0;width:auto;height:auto;color:#8a8378;"></i>詳しい内容あり</span>
-    <span>日付を押すと、その日の内容を書けます</span>
+    <span>日付を押すと、その日の内容を見られます（書くのは「編集」から）</span>
   </div>
   <div class="cal-tools">
     <a href="?ym={{ ym }}&edit=1" class="btn btn-primary" id="cal-edit-btn"><i class="bi bi-pencil-square"></i> 編集</a>
@@ -91,3 +145,63 @@
   {% endif %}
 </div>
 {% endblock %}
+{% block extra_js %}{% if editing %}
+<script>
+(function () {
+  var list = document.getElementById('cal-edit-list');
+  if (!list) return;
+  var max = parseInt(list.dataset.max, 10) || 4;
+  // ↓ を押すと詳しい内容の欄が下に開き、↑ になる。↑ を押すと閉じる
+  function toggle(btn, open) {
+    var box = document.getElementById(btn.getAttribute('aria-controls'));
+    if (!box) return;
+    if (open === undefined) open = box.hidden;
+    box.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', btn.getAttribute('aria-label').replace(open ? '開く' : '閉じる', open ? '閉じる' : '開く'));
+    btn.firstElementChild.className = open ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+    if (open) { var ta = box.querySelector('textarea'); if (ta) ta.focus({ preventScroll: true }); }
+  }
+  list.addEventListener('click', function (e) {
+    var more = e.target.closest('.ce-more');
+    if (more) { toggle(more); return; }
+    var add = e.target.closest('.ce-add');
+    if (add) {
+      var li = add.closest('li'), n = li.querySelectorAll('.ce-row').length;
+      if (n >= max) return;
+      var html = document.getElementById('ce-row-tpl').innerHTML
+        .replace(/__ISO__/g, li.dataset.iso).replace(/__I__/g, String(n)).replace(/__DAY__/g, li.dataset.day);
+      add.insertAdjacentHTML('beforebegin', html);
+      if (n + 1 >= max) add.hidden = true;
+      var input = li.querySelectorAll('.ce-row')[n].querySelector('input[type=text]');
+      if (input) input.focus();
+    }
+  });
+  // 詳しい内容が入っている予定は、↓ のボタンに色を付ける。予定を入れた日には「べつの予定を足す」を出す
+  list.addEventListener('input', function (e) {
+    if (e.target.type === 'text') {
+      var li = e.target.closest('li'), filled = false;
+      li.querySelectorAll('input[type=text]').forEach(function (t) { filled = filled || t.value.trim() !== ''; });
+      li.classList.toggle('has-plan', filled);
+      return;
+    }
+    if (e.target.tagName !== 'TEXTAREA') return;
+    var btn = list.querySelector('.ce-more[aria-controls="' + e.target.parentElement.id + '"]');
+    if (btn) btn.classList.toggle('has-detail', e.target.value.trim() !== '');
+  });
+  // 見せる相手：「全員」とグループは、どちらか。何も選ばなければ全員
+  list.addEventListener('change', function (e) {
+    var box = e.target.closest('.ce-aud');
+    if (!box) return;
+    var all = box.querySelector('input[value=all]'), others = box.querySelectorAll('input:not([value=all])');
+    if (e.target === all && all.checked) { others.forEach(function (o) { o.checked = false; }); }
+    else if (e.target !== all && e.target.checked) { all.checked = false; }
+    var any = false; others.forEach(function (o) { any = any || o.checked; });
+    if (!any) all.checked = true;
+  });
+  // 1 日ぶんの画面の「編集する」から来たとき：その日の詳しい内容を開いておく
+  var target = location.hash.indexOf('#d-') === 0 ? document.getElementById(location.hash.slice(1)) : null;
+  if (target) { target.querySelectorAll('.ce-more.has-detail').forEach(function (b) { toggle(b, true); }); }
+})();
+</script>
+{% endif %}{% endblock %}

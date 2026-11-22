@@ -7,6 +7,7 @@
 #   - list            : 事業所の一覧を表示する
 #   - family_page_on / family_page_off : 職員のホームをアイコンの並びにし、保護者ページを使う／やめる（facility_id）
 #   - status / autostart_check / autostart_install / backup / backup_list / backup_check / error_log / login_log / set_media_root
+#   - security_check  : 診断（読み取りだけ）。サーバーの中の設定・権限と、外から見える応答（HTTPS・ヘッダー・出てはいけないファイル）を確かめる
 #   - disable_logins / enable_logins : その事業所の職員アカウントをまとめて無効／有効にする（facility_id）
 #   - delete_facility・seed_demo・seed_demo_reset・billing_demo・billing_demo_remove : 開発だけ（本番では止める）
 #
@@ -36,7 +37,7 @@ on:
         type: choice
         required: true
         default: list
-        options: [create_facility, set_password, list, delete_facility, seed_demo, seed_demo_reset, billing_demo, billing_demo_remove, error_log, login_log, set_media_root, status, autostart_check, autostart_install, backup, backup_list, backup_check, disable_logins, enable_logins, family_page_on, family_page_off]
+        options: [create_facility, set_password, list, delete_facility, seed_demo, seed_demo_reset, billing_demo, billing_demo_remove, error_log, login_log, set_media_root, status, autostart_check, autostart_install, backup, backup_list, backup_check, disable_logins, enable_logins, family_page_on, family_page_off, security_check]
       facility_name:
         description: "事業所名（create_facility）"
         type: string
@@ -131,7 +132,7 @@ jobs:
         run: |
           if [ "$APP" = "family" ]; then
             # 保護者向けの置き場所では、起動まわりとログだけ（データの作業・バックアップは DB を共用する職員向けの側で）
-            case "$TASK" in status|autostart_check|autostart_install|error_log|login_log) ;;
+            case "$TASK" in status|autostart_check|autostart_install|error_log|login_log|security_check) ;;
               *) echo "app=family で実行できるのは status・autostart_check・autostart_install・error_log・login_log だけです（ほかは app=staff で）"; exit 1;; esac
             REMOTE_APP_DIR="${REMOTE_APP_DIR}family"; REMOTE_VENV="${REMOTE_VENV}family"
           fi
@@ -211,9 +212,9 @@ jobs:
                 { grep -F 'POST /accounts/login/' logs/access.log 2>/dev/null || true; } \
                   | awk -v s="$since" '{ if ($4 ~ /^\[/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] " 応答=" $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : $0 ~ /Android/ ? "Android" : $0 ~ /Windows/ ? "Windows" : $0 ~ /Macintosh/ ? "Mac" : "その他") "/" ($0 ~ /Edg/ ? "Edge" : $0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Firefox/ ? "Firefox" : $0 ~ /Safari/ ? "Safari" : "不明") } }' \
                   | tail -n 60
-                echo "== スマホ（iPhone/iPad/Android）からの画面の流れ（access.log、直近 3 日。static・media・healthz を除く。時刻 メソッド パス 応答 端末） =="
+                echo "== スマホ（iPhone/iPad/Android）からの画面の流れ（access.log、直近 3 日。static・media・healthz を除く。時刻 メソッド パス 応答 端末。? より後ろと、合い言葉・番号らしい部分は *** に伏せる） =="
                 since3=$(date -d '3 days ago' '+%Y-%m-%d' 2>/dev/null || echo 0000-00-00)
-                awk -v s="$since3" '{ if ($4 ~ /^\[/ && ($0 ~ /iPhone|iPad|Android/) && $7 !~ /^\/(static|media|healthz)/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] ":" a[7] " " $6 " " $7 " " $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : "Android") "/" ($0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Safari/ ? "Safari" : "不明") } }' logs/access.log 2>/dev/null | sed -E 's/\?[^ ]*//; s/[0-9]{6,}/#/g' | tail -n 120 || true
+                awk -v s="$since3" '{ if ($4 ~ /^\[/ && ($0 ~ /iPhone|iPad|Android/) && $7 !~ /^\/(static|media|healthz)/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] ":" a[7] " " $6 " " $7 " " $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : "Android") "/" ($0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Safari/ ? "Safari" : "不明") } }' logs/access.log 2>/dev/null | python3 -c 'import re, sys; t = lambda s: (len(s) >= 8 and re.search(r"[0-9]", s) and re.search(r"[A-Za-z]", s)) or (len(s) >= 12 and re.search(r"[A-Z:=%]", s)) or re.fullmatch(r"[0-9]{6,}", s); [sys.stdout.write(re.sub(r"/([^/ ]+)", lambda m: "/***" if t(m.group(1)) else "/" + m.group(1), re.sub(r"\?[^ ]*", "", line))) for line in sys.stdin]' | tail -n 120 || true
                 echo "== ログインの記録（直近 7 日。種類・端末・ユーザー名の違い） =="
                 python manage.py shell -v 0 -c "import datetime; from django.utils import timezone; from accounts.models import LoginEvent, StaffAccount; names = {u.username for u in StaffAccount.objects.all()}; lower = {n.lower(): n for n in names}; [print(timezone.localtime(e.created_at).strftime('%m-%d %H:%M'), e.get_kind_display(), '|', ('iPhone/iPad' if ('iPhone' in e.user_agent or 'iPad' in e.user_agent) else 'Android' if 'Android' in e.user_agent else 'Windows' if 'Windows' in e.user_agent else 'Mac' if 'Macintosh' in e.user_agent else 'その他'), '|', ('ユーザー名は登録どおり' if e.username in names else '大文字小文字・空白だけ違う' if e.username.strip().lower() in lower else '登録のないユーザー名' if e.username else '（ユーザー名なし）')) for e in LoginEvent.objects.filter(created_at__gte=timezone.now() - datetime.timedelta(days=7)).order_by('created_at')[:80]]" ;;
               error_log)
@@ -246,6 +247,56 @@ jobs:
                 [ -n "$FACILITY_ID" ] || { echo "facility_id を入れてください（list で確認）"; exit 1; }
                 # 事業所の職員をまとめて無効／有効にする（ユーザー名は出さず、件数だけ）
                 FACILITY_ID="$FACILITY_ID" TASK="$TASK" python manage.py shell -c "import os; from facilities.models import Facility; from accounts.models import StaffAccount; f = Facility.objects.get(pk=os.environ['FACILITY_ID']); on = os.environ['TASK'] == 'enable_logins'; n = StaffAccount.objects.filter(facility=f, is_active=not on).update(is_active=on); print(f'施設 {f.pk}「{f.name}」の職員アカウント {n} 件を', '有効に戻しました' if on else '無効にしました（ログインできません）')" ;;
+              security_check)
+                # 読み取りだけ。秘密の値は出さない（長さ・あるかないか・権限だけ）
+                envv() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2- | tr -d '"' || true; }
+                perm() { stat -c '%a %U' "$1" 2>/dev/null || echo "(なし)"; }
+                echo "== .env =="
+                echo ".env の権限: $(perm .env)（600 であること）"
+                echo "DEBUG=$(envv DEBUG)  SECURE_SSL_REDIRECT=$(envv SECURE_SSL_REDIRECT)  ALLOWED_HOSTS=$(envv DJANGO_ALLOWED_HOSTS)  CSRF_TRUSTED_ORIGINS=$(envv CSRF_TRUSTED_ORIGINS)"
+                echo "ALLOW_FACILITY_SIGNUP=$(envv ALLOW_FACILITY_SIGNUP)  SIGNUP_CODE: $([ -n "$(envv SIGNUP_CODE)" ] && echo あり || echo 空)  GUNICORN_BIND_HOST=$(envv GUNICORN_BIND_HOST)  DJANGO_SETTINGS_MODULE=$(envv DJANGO_SETTINGS_MODULE)"
+                k=$(envv SECRET_KEY); echo "SECRET_KEY の長さ: ${#k}  DB_PASSWORD の長さ: $(v=$(envv DB_PASSWORD); echo ${#v})  DB_HOST=$(envv DB_HOST)  DB_USER=$(envv DB_USER)"
+                echo "MOBILE_API_CORS_ORIGINS=$(envv MOBILE_API_CORS_ORIGINS)  EMAIL_HOST: $([ -n "$(envv EMAIL_HOST)" ] && echo あり || echo 空)  ANTHROPIC_API_KEY: $([ -n "$(envv ANTHROPIC_API_KEY)" ] && echo あり || echo 空)"
+                echo "== 置き場所の権限（同じサーバーのほかの利用者から読めないか）=="
+                echo "ホーム: $(perm "$HOME")  置き場所: $(perm "$APP_DIR")  media: $(perm "$(envv MEDIA_ROOT | sed "s#^~#$HOME#")")  backups: $(perm backups)  logs: $(perm logs)  run: $(perm run)  venv: $(perm "$VENV")"
+                echo "ほかの利用者が読めるファイルの数（置き場所の直下 2 段。.git・staticfiles を除く）: $(find . -maxdepth 2 -not -path './.git*' -not -path './staticfiles*' -type f -perm -o+r 2>/dev/null | wc -l)"
+                echo "ほかの利用者が読める media のファイル: $(find "$(envv MEDIA_ROOT | sed "s#^~#$HOME#")" -type f -perm -o+r 2>/dev/null | wc -l)  backups のファイル: $(find backups -type f -perm -o+r 2>/dev/null | wc -l)  ログ: $(find logs -type f -perm -o+r 2>/dev/null | wc -l)"
+                echo "ほかの利用者が書ける場所: $(find . -maxdepth 3 -not -path './.git*' -perm -o+w -not -type l 2>/dev/null | wc -l)"
+                echo "== 待ち受け =="
+                APP_DIR="$APP_DIR" VENV="$VENV" bash deploy/venv-deploy.sh --status | grep -E "gunicorn:|bind:|healthz|settings:|code:" || true
+                (ss -ltnH 2>/dev/null || netstat -ltn 2>/dev/null) | awk '{print $4}' | grep -E ":(8049|8050)$" | sed 's/^/待ち受け中: /' || true
+                echo "== 取得元・自動起動 =="
+                git remote get-url origin | sed -E 's#//[^/@]+@#//***@#' | sed 's/^/origin: /'
+                echo "crontab のこの置き場所の行: $(crontab -l 2>/dev/null | grep -cF "$APP_DIR/deploy/venv-deploy.sh" || true)"
+                echo "== Django の配備向けの確認 =="
+                python manage.py check --deploy 2>&1 | tail -n 12
+                echo "== 部品の版 =="
+                python --version; pip list --format=freeze 2>/dev/null | grep -i -E "^(django|gunicorn|brotli|pillow|whitenoise|requests|urllib3|psycopg2-binary|weasyprint|cryptography|anthropic)==" | tr '\n' ' '; echo
+                echo "== アカウント（数だけ）=="
+                python manage.py shell -v 0 -c "if True:
+                from accounts.models import StaffAccount
+                from django.conf import settings
+                def _ok(i):
+                    try:
+                        ipaddress.ip_address(i); return True
+                    except ValueError:
+                        return False
+                q = StaffAccount.objects
+                print('職員:', q.count(), '| 使える:', q.filter(is_active=True).count(), '| superuser:', q.filter(is_superuser=True).count(), '| is_staff:', q.filter(is_staff=True).count(), '| パスワードなし:', sum(1 for u in q.all() if not u.has_usable_password()))
+                print('DEBUG:', settings.DEBUG, '| ALLOWED_HOSTS:', settings.ALLOWED_HOSTS, '| SESSION_COOKIE_SECURE:', settings.SESSION_COOKIE_SECURE, '| CSRF_COOKIE_SECURE:', settings.CSRF_COOKIE_SECURE, '| HSTS:', settings.SECURE_HSTS_SECONDS, '| SESSION_COOKIE_AGE:', settings.SESSION_COOKIE_AGE, '| SESSION_COOKIE_HTTPONLY:', settings.SESSION_COOKIE_HTTPONLY, '| SAMESITE:', settings.SESSION_COOKIE_SAMESITE, '| PROXY_SSL_HEADER:', settings.SECURE_PROXY_SSL_HEADER, '| X_FRAME:', settings.X_FRAME_OPTIONS)
+                from accounts.models import LoginEvent
+                import ipaddress
+                ips = [i for i in LoginEvent.objects.order_by('-created_at').values_list('ip', flat=True)[:200] if i]
+                inner = sum(1 for i in ips if (lambda a: a.is_private or a.is_loopback)(ipaddress.ip_address(i)) ) if all(_ok(i) for i in ips) else -1
+                print('ログインの記録の接続元（直近', len(ips), '件）: 種類', len(set(ips)), '| 内側のアドレス（127.0.0.1 など）:', inner, '件（多ければ、nginx が接続元を渡していない）')
+                print('admin が入っている:', 'django.contrib.admin' in settings.INSTALLED_APPS, '| ROOT_URLCONF:', settings.ROOT_URLCONF)
+                try:
+                    from family.models import FamilyAccount
+                    f = FamilyAccount.objects
+                    print('保護者アカウント:', f.count(), '| 使える:', f.filter(is_active=True).count(), '| ロック中:', sum(1 for a in f.all() if a.is_locked))
+                except Exception as e:
+                    print('保護者アカウント: 見られない', type(e).__name__)
+                " ;;
               family_page_on|family_page_off)
                 [ -n "$FACILITY_ID" ] || { echo "facility_id を入れてください（list で確認）"; exit 1; }
                 args=(family_page --facility "$FACILITY_ID")
@@ -255,3 +306,58 @@ jobs:
             esac
           REMOTE
           } | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" bash -s
+
+      - name: Security check from outside (read-only, a few dozen requests)
+        if: inputs.task == 'security_check'
+        env:
+          TARGET: ${{ inputs.target }}
+          APP: ${{ inputs.app }}
+        run: |
+          D="$([ "$TARGET" = prod ] || echo st-)naru$([ "$APP" = family ] && echo -family || true).ai-labo.cloud"
+          PORT=$([ "$APP" = family ] && echo 8050 || echo 8049)
+          UA="naru-security-check"
+          code() { curl -s -o /dev/null -A "$UA" -w '%{http_code}' --max-time 15 "$@" || true; }
+          echo "== 対象: https://$D/ =="
+          echo "-- http → https"
+          curl -s -o /dev/null -A "$UA" --max-time 15 -w 'http://  → %{http_code} %{redirect_url}\n' "http://$D/" || true
+          echo "-- TLS"
+          for v in tls1 tls1_1 tls1_2 tls1_3; do
+            if echo | timeout 15 openssl s_client -connect "$D:443" -servername "$D" -"$v" >/tmp/tls.txt 2>/dev/null && grep -q "Cipher is" /tmp/tls.txt && ! grep -q "Cipher is (NONE)" /tmp/tls.txt; then
+              echo "$v: 受ける（$(grep -m1 'Cipher is' /tmp/tls.txt | sed 's/.*Cipher is //')）"; else echo "$v: 受けない"; fi
+          done
+          echo | timeout 15 openssl s_client -connect "$D:443" -servername "$D" 2>/dev/null | openssl x509 -noout -subject -issuer -enddate 2>/dev/null | sed 's/^/証明書 /' || true
+          echo "-- 応答のヘッダー（ログインの画面）"
+          LOGIN=$([ "$APP" = family ] && echo /login/ || echo /accounts/login/)
+          curl -s -D /tmp/h.txt -o /tmp/b.html -A "$UA" --max-time 15 "https://$D$LOGIN" || true
+          head -n 1 /tmp/h.txt
+          for h in strict-transport-security x-frame-options x-content-type-options referrer-policy content-security-policy permissions-policy cross-origin-opener-policy cache-control server x-powered-by; do
+            v=$(grep -i "^$h:" /tmp/h.txt | head -n 1 | tr -d '\r' | cut -d: -f2- || true); echo "$h:${v:- （なし）}"
+          done
+          grep -i '^set-cookie:' /tmp/h.txt | sed -E 's/=[^;]*/=***/' | tr -d '\r' || echo "set-cookie: （なし）"
+          echo "-- 出てはいけないもの（404 か 403・ログインへの転送ならよい）"
+          for p in /.env /.git/config /.git/HEAD /db.sqlite3 /backups/ /logs/error.log /logs/access.log /requirements.txt /manage.py /deploy/venv-deploy.sh /static/ /media/ /admin/ /admin/login/ /server-status /phpinfo.php /.well-known/security.txt /robots.txt; do
+            echo "$p → $(code "https://$D$p")"
+          done
+          echo "-- ログインなしで開く（職員・保護者の画面と API）"
+          for p in / /home/ /users/ /users/1/ /family/staff/inbox/ /family/staff/book/ /family/ /family/from/ /api/mobile/v1/me/ /api/mobile/v1/beneficiaries/ /records/day/ /plans/renewal/ /accounts/staff/ /account/setup/x/ /healthz/; do
+            curl -s -o /dev/null -A "$UA" --max-time 15 -w "$p → %{http_code} %{redirect_url}\n" "https://$D$p" || true
+          done
+          echo "-- healthz の中身（先頭 200 字）"; curl -s -A "$UA" --max-time 15 "https://$D/healthz/" | head -c 200; echo
+          echo "-- 無いページの出かた（DEBUG の情報が出ていないか）"
+          curl -s -A "$UA" --max-time 15 "https://$D/this-page-does-not-exist-$RANDOM/" > /tmp/404.html || true
+          echo "404 の大きさ: $(wc -c < /tmp/404.html) バイト  DEBUG の表示: $(grep -c -i -E 'Traceback|DEBUG = True|Request Method|urlpatterns|Django tried these URL' /tmp/404.html || true) 件"
+          echo "-- ホスト名の偽装（400 ならよい）"
+          echo "Host: evil.example → $(code -H 'Host: evil.example' "https://$D$LOGIN" -k)"
+          echo "X-Forwarded-Host: evil.example → $(curl -s -A "$UA" --max-time 15 -H 'X-Forwarded-Host: evil.example' "https://$D$LOGIN" | grep -c 'evil.example' || true) 件の反映"
+          echo "-- CSRF（トークンなしの送信。403 ならよい）"
+          echo "POST $LOGIN → $(code -X POST -d 'username=x&password=x&email=x@example.test' "https://$D$LOGIN")"
+          echo "-- メソッド"
+          echo "TRACE → $(code -X TRACE "https://$D/")  OPTIONS → $(code -X OPTIONS "https://$D/")"
+          echo "-- アプリのポートが外から直に開くか（つながらなければよい）"
+          for pt in 8049 8050; do echo "http://$D:$pt/ → $(curl -s -o /dev/null -A "$UA" -w '%{http_code}' --connect-timeout 6 --max-time 8 "http://$D:$pt/healthz/" || true)"; done
+          echo "-- CORS（よそのサイトからの読み取りを許していないか）"
+          curl -s -o /dev/null -D - -A "$UA" --max-time 15 -H 'Origin: https://evil.example' "https://$D/api/mobile/v1/me/" | grep -i '^access-control-' | tr -d '\r' || echo "access-control-*: （なし）"
+          echo "-- 画面の中の外部の部品（CDN）に、改ざんの検知（integrity）が付いているか"
+          echo "外部の script/link: $(grep -o -i -E '<(script|link)[^>]+https?://[^>]+>' /tmp/b.html | wc -l) 件  うち integrity つき: $(grep -o -i -E '<(script|link)[^>]+https?://[^>]+>' /tmp/b.html | grep -c -i integrity || true) 件"
+          grep -o -i -E '<(script|link)[^>]+https?://[^"'"'"' >]+' /tmp/b.html | grep -o -E 'https?://[^/"]+' | sort | uniq -c | sed 's/^/  /' || true
+

@@ -60,11 +60,33 @@ class AuthTests(ApiCase):
         self.assertFalse(MobileToken.objects.filter(key_hash=body['token']).exists())
 
     def test_wrong_password_and_lockout(self):
-        for _ in range(10):
+        # 職員のログイン画面と同じ決まり（同じユーザー名で 5 回まちがえると 15 分。accounts/security.py）
+        from accounts import security
+        for _ in range(security.USER_TRIES):
             res = self.call('post', 'auth/login/', {'username': 'app', 'password': 'x'}, key='')
             self.assertEqual(res.status_code, 401)
         res = self.call('post', 'auth/login/', {'username': 'app', 'password': 'pw12345678'}, key='')
         self.assertEqual((res.status_code, res.json()['code']), (429, 'locked'))
+
+    def test_lockout_cannot_be_bypassed_with_forwarded_header(self):
+        """接続元を偽るヘッダー（X-Forwarded-For の先頭）を毎回変えても、回数の制限は外れない（2026-11-22 セキュリティ診断）"""
+        import json
+        from accounts import security
+        from accounts.models import LoginEvent
+        url = '/api/mobile/v1/auth/login/'
+        post = lambda pw, i: self.client.post(url, json.dumps({'username': 'app', 'password': pw}), content_type='application/json',   # noqa: E731
+                                              HTTP_X_FORWARDED_FOR=f'10.9.{i}.1, 203.0.113.7')
+        codes = [post('x', i).status_code for i in range(security.USER_TRIES + 3)]
+        self.assertEqual(codes, [401] * security.USER_TRIES + [429] * 3)
+        self.assertEqual(post('pw12345678', 99).status_code, 429)          # ロック中は、正しいパスワードでも通さない
+        # 失敗は 5 件だけ。ロック中の試行は「失敗」に数えない（試し続けてもロックが延びない）
+        self.assertEqual(LoginEvent.objects.filter(kind=LoginEvent.KIND_FAIL, username='app').count(), security.USER_TRIES)
+        self.assertEqual(LoginEvent.objects.filter(kind=LoginEvent.KIND_LOCK, username='app').count(), 4)
+        # 記録する接続元は、前段の nginx が足した末尾（送り手が書いた先頭ではない）
+        self.assertEqual(set(LoginEvent.objects.filter(username='app').values_list('ip', flat=True)), {'203.0.113.7'})
+        # ロックが解ければ入れる
+        LoginEvent.objects.filter(username='app').update(created_at=timezone.now() - datetime.timedelta(minutes=security.LOCK_MINUTES + security.WINDOW_MINUTES + 1))
+        self.assertEqual(post('pw12345678', 100).status_code, 200)
 
     def test_pending_account_is_told(self):
         StaffAccount.objects.create_user('wait', password='pw12345678', facility=self.f, is_active=False,

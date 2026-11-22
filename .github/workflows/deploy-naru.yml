@@ -11,7 +11,7 @@
 #   置き場所 ~/michinotenarufamily・Python の環境 ~/envnarufamily（職員向けとは別。ブランチごとに requirements が違ってもよいように）
 #   DB と写真・書類の置き場所（~/michinotenaru/media）は職員向けと共用。DB の形は職員向け（main）の配備が決めるので、
 #   保護者向けの配備では migrate しない（このコードの migration が DB に無ければ止まる → 先に main へ入れて app=staff を配備）
-#   本番はブランチ main か family から
+#   本番はブランチ main か family から。保護者アプリの開発の担当も配備してよい（職員向けの本番は、依頼者が指示したときだけ。CLAUDE.md）
 #   .env の SECRET_KEY は職員向けと同じ値（初回に写す。パスワード設定のリンクの署名に使うため）。
 #   .env の DJANGO_SETTINGS_MODULE=config.settings_family で、保護者の画面だけを出す設定で起動する
 #
