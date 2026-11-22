@@ -4,7 +4,6 @@ import functools
 import json
 
 from django.conf import settings
-from django.core.cache import cache
 from django.http import Http404, HttpResponse, JsonResponse, QueryDict
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -14,8 +13,6 @@ from facilities.models import Facility
 from .models import MobileToken
 
 TOUCH_EVERY = datetime.timedelta(minutes=10)   # last_used_at を書き換える間隔（毎回は書かない）
-LOGIN_FAIL_MAX = 10                            # 同じユーザー名・同じ接続元でこの回数まちがえたら
-LOGIN_FAIL_SECONDS = 15 * 60                   # この時間は受け付けない
 
 
 class ApiError(Exception):
@@ -38,25 +35,17 @@ def bearer(request):
 
 
 def client_ip(request):
-    return (request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-            or request.META.get('REMOTE_ADDR', ''))
-
-
-def _fail_key(request, username):
-    return f'mobile_api:login_fail:{client_ip(request)}:{username.lower()[:150]}'
+    from accounts import security
+    return security.client_ip(request)
 
 
 def login_blocked(request, username):
-    return (cache.get(_fail_key(request, username)) or 0) >= LOGIN_FAIL_MAX
-
-
-def login_failed(request, username):
-    key = _fail_key(request, username)
-    cache.set(key, (cache.get(key) or 0) + 1, LOGIN_FAIL_SECONDS)
-
-
-def login_succeeded(request, username):
-    cache.delete(_fail_key(request, username))
+    """
+    ログインの失敗が続いて、いま受け付けない相手か。職員のログイン画面と同じ決まり・同じ記録（accounts/security.py。DB に持つ）。
+    以前はここだけ別の数え方（X-Forwarded-For の先頭＋ユーザー名ごと・プロセスごとのメモリ）で、ヘッダーを変えれば何回でも試せた
+    """
+    from accounts import security
+    return security.locked_until(username, security.client_ip(request)) is not None
 
 
 def as_post(data):

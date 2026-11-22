@@ -41,9 +41,8 @@ BAD_WINDOW = 60 * 60      # その数え直しまでの秒数
 
 def client_key(request):
     """回数を数える相手の見分け（前段の nginx が付ける転送元があればそれを使う）"""
-    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    ip = forwarded.split(',')[0].strip() if forwarded else request.META.get('REMOTE_ADDR', '')
-    return ip or 'unknown'
+    from accounts import security
+    return security.client_ip(request) or 'unknown'
 
 
 def today_first():

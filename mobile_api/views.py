@@ -23,7 +23,7 @@ from records.models import ActivityTag, DailyRecord
 from schedules.models import ScheduledVisit
 from therapy.models import ACTIVITY_MAX, TherapyProfile, TherapyRecord
 
-from .auth import (ApiError, api, as_post, error, login_blocked, login_failed, login_succeeded)
+from .auth import (ApiError, api, as_post, error, login_blocked)
 from .models import MobileToken
 
 WEEK_JP = ['月', '火', '水', '木', '金', '土', '日']
@@ -101,15 +101,16 @@ def login(request):
     if not username or not password:
         return error('ユーザー名とパスワードを入れてください。')
     if login_blocked(request, username):
+        from accounts import security
+        from accounts.models import LoginEvent
+        security.record(LoginEvent.KIND_LOCK, request, username)
         return error('ログインの失敗が続いたため、しばらく受け付けません。15分ほどしてからお試しください。', 429, 'locked')
-    user = authenticate(request, username=username, password=password)
+    user = authenticate(request, username=username, password=password)   # 失敗は Django の合図で記録される（accounts/security.py）
     if user is None:
-        login_failed(request, username)
         pending = StaffAccount.objects.filter(username__iexact=username, signup_pending=True).first()
         if pending is not None and pending.check_password(password):
             return error('このアカウントは管理者の承認待ちです。承認されるとログインできます。', 403, 'pending')
         return error('ユーザー名かパスワードが違います。', 401, 'credentials')
-    login_succeeded(request, username)
     if user.facility_id is None and user.can_switch_facility:
         user.facility = Facility.objects.order_by('pk').first()
         user._facility_switched = True

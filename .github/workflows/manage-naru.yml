@@ -212,9 +212,9 @@ jobs:
                 { grep -F 'POST /accounts/login/' logs/access.log 2>/dev/null || true; } \
                   | awk -v s="$since" '{ if ($4 ~ /^\[/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] " 応答=" $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : $0 ~ /Android/ ? "Android" : $0 ~ /Windows/ ? "Windows" : $0 ~ /Macintosh/ ? "Mac" : "その他") "/" ($0 ~ /Edg/ ? "Edge" : $0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Firefox/ ? "Firefox" : $0 ~ /Safari/ ? "Safari" : "不明") } }' \
                   | tail -n 60
-                echo "== スマホ（iPhone/iPad/Android）からの画面の流れ（access.log、直近 3 日。static・media・healthz を除く。時刻 メソッド パス 応答 端末） =="
+                echo "== スマホ（iPhone/iPad/Android）からの画面の流れ（access.log、直近 3 日。static・media・healthz を除く。時刻 メソッド パス 応答 端末。? より後ろと、合い言葉・番号らしい部分は *** に伏せる） =="
                 since3=$(date -d '3 days ago' '+%Y-%m-%d' 2>/dev/null || echo 0000-00-00)
-                awk -v s="$since3" '{ if ($4 ~ /^\[/ && ($0 ~ /iPhone|iPad|Android/) && $7 !~ /^\/(static|media|healthz)/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] ":" a[7] " " $6 " " $7 " " $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : "Android") "/" ($0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Safari/ ? "Safari" : "不明") } }' logs/access.log 2>/dev/null | sed -E 's/\?[^ ]*//; s/[0-9]{6,}/#/g' | tail -n 120 || true
+                awk -v s="$since3" '{ if ($4 ~ /^\[/ && ($0 ~ /iPhone|iPad|Android/) && $7 !~ /^\/(static|media|healthz)/) { split($4, a, "[/:\\[]"); m["Jan"]="01";m["Feb"]="02";m["Mar"]="03";m["Apr"]="04";m["May"]="05";m["Jun"]="06";m["Jul"]="07";m["Aug"]="08";m["Sep"]="09";m["Oct"]="10";m["Nov"]="11";m["Dec"]="12"; d=a[4] "-" m[a[3]] "-" a[2]; if (d>=s) print d " " a[5] ":" a[6] ":" a[7] " " $6 " " $7 " " $9 " " ($0 ~ /iPhone|iPad/ ? "iPhone/iPad" : "Android") "/" ($0 ~ /CriOS|Chrome/ ? "Chrome" : $0 ~ /Safari/ ? "Safari" : "不明") } }' logs/access.log 2>/dev/null | python3 -c 'import re, sys; t = lambda s: (len(s) >= 8 and re.search(r"[0-9]", s) and re.search(r"[A-Za-z]", s)) or (len(s) >= 12 and re.search(r"[A-Z:=%]", s)) or re.fullmatch(r"[0-9]{6,}", s); [sys.stdout.write(re.sub(r"/([^/ ]+)", lambda m: "/***" if t(m.group(1)) else "/" + m.group(1), re.sub(r"\?[^ ]*", "", line))) for line in sys.stdin]' | tail -n 120 || true
                 echo "== ログインの記録（直近 7 日。種類・端末・ユーザー名の違い） =="
                 python manage.py shell -v 0 -c "import datetime; from django.utils import timezone; from accounts.models import LoginEvent, StaffAccount; names = {u.username for u in StaffAccount.objects.all()}; lower = {n.lower(): n for n in names}; [print(timezone.localtime(e.created_at).strftime('%m-%d %H:%M'), e.get_kind_display(), '|', ('iPhone/iPad' if ('iPhone' in e.user_agent or 'iPad' in e.user_agent) else 'Android' if 'Android' in e.user_agent else 'Windows' if 'Windows' in e.user_agent else 'Mac' if 'Macintosh' in e.user_agent else 'その他'), '|', ('ユーザー名は登録どおり' if e.username in names else '大文字小文字・空白だけ違う' if e.username.strip().lower() in lower else '登録のないユーザー名' if e.username else '（ユーザー名なし）')) for e in LoginEvent.objects.filter(created_at__gte=timezone.now() - datetime.timedelta(days=7)).order_by('created_at')[:80]]" ;;
               error_log)
@@ -276,9 +276,19 @@ jobs:
                 python manage.py shell -v 0 -c "if True:
                 from accounts.models import StaffAccount
                 from django.conf import settings
+                def _ok(i):
+                    try:
+                        ipaddress.ip_address(i); return True
+                    except ValueError:
+                        return False
                 q = StaffAccount.objects
                 print('職員:', q.count(), '| 使える:', q.filter(is_active=True).count(), '| superuser:', q.filter(is_superuser=True).count(), '| is_staff:', q.filter(is_staff=True).count(), '| パスワードなし:', sum(1 for u in q.all() if not u.has_usable_password()))
                 print('DEBUG:', settings.DEBUG, '| ALLOWED_HOSTS:', settings.ALLOWED_HOSTS, '| SESSION_COOKIE_SECURE:', settings.SESSION_COOKIE_SECURE, '| CSRF_COOKIE_SECURE:', settings.CSRF_COOKIE_SECURE, '| HSTS:', settings.SECURE_HSTS_SECONDS, '| SESSION_COOKIE_AGE:', settings.SESSION_COOKIE_AGE, '| SESSION_COOKIE_HTTPONLY:', settings.SESSION_COOKIE_HTTPONLY, '| SAMESITE:', settings.SESSION_COOKIE_SAMESITE, '| PROXY_SSL_HEADER:', settings.SECURE_PROXY_SSL_HEADER, '| X_FRAME:', settings.X_FRAME_OPTIONS)
+                from accounts.models import LoginEvent
+                import ipaddress
+                ips = [i for i in LoginEvent.objects.order_by('-created_at').values_list('ip', flat=True)[:200] if i]
+                inner = sum(1 for i in ips if (lambda a: a.is_private or a.is_loopback)(ipaddress.ip_address(i)) ) if all(_ok(i) for i in ips) else -1
+                print('ログインの記録の接続元（直近', len(ips), '件）: 種類', len(set(ips)), '| 内側のアドレス（127.0.0.1 など）:', inner, '件（多ければ、nginx が接続元を渡していない）')
                 print('admin が入っている:', 'django.contrib.admin' in settings.INSTALLED_APPS, '| ROOT_URLCONF:', settings.ROOT_URLCONF)
                 try:
                     from family.models import FamilyAccount
