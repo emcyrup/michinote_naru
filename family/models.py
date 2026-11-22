@@ -253,14 +253,22 @@ class ParentNote(models.Model):
 
 class DayEvent(models.Model):
     """
-    予定のカレンダーの 1 日ぶん（休業日・活動の予定・お出かけ先）。職員が入れ、保護者ページにも同じものが出る。
+    予定のカレンダーの予定 1 件（休業日・活動の予定・お出かけ先）。職員が入れ、保護者ページにも同じものが出る。
     title は日付の下に出す短い文。detail は日付を押したときに出す詳しい内容（持ち物・参加費など）。
+
+    見せる相手（2026-11-22）：groups が空なら全員。グループ（お知らせと同じ NoticeGroup）を選ぶと、そのグループの子の保護者にだけ出る。
+    小学生と未就学で活動の内容が違う日のために、同じ日に複数の予定を持てる（order の順。1 日に MAX_PER_DAY 件まで）。
+    休業日（is_closed）は日ごとの印で、その日のどれか 1 件に付いていれば休業日。読み書きは family/yotei.py を通す。
     """
     TITLE_MAX = 40
     DETAIL_MAX = 1000
+    MAX_PER_DAY = 4
 
     facility = models.ForeignKey(Facility, on_delete=models.CASCADE, related_name='day_events')
     date = models.DateField(verbose_name='日付')
+    order = models.PositiveSmallIntegerField(default=0, verbose_name='その日の中の並び')
+    groups = models.ManyToManyField('family.NoticeGroup', blank=True, related_name='day_events',
+                                    verbose_name='見せるグループ（空なら全員）')
     title = models.CharField(max_length=TITLE_MAX, blank=True, verbose_name='予定（日付の下に出す）')
     is_closed = models.BooleanField(default=False, verbose_name='休業日')
     detail = models.TextField(blank=True, verbose_name='詳しい内容（持ち物・参加費など）')
@@ -271,8 +279,8 @@ class DayEvent(models.Model):
     class Meta:
         verbose_name = '予定（カレンダー）'
         verbose_name_plural = '予定（カレンダー）'
-        ordering = ['date']
-        constraints = [models.UniqueConstraint(fields=['facility', 'date'], name='day_event_one_per_day')]
+        ordering = ['date', 'order', 'pk']
+        indexes = [models.Index(fields=['facility', 'date'], name='day_event_day')]
 
     def __str__(self):
         return f'{self.date} {"休業日 " if self.is_closed else ""}{self.title}'
@@ -281,6 +289,21 @@ class DayEvent(models.Model):
     def label(self):
         """日付の下に出す文（休業日で予定の文が無ければ「休業日」）"""
         return self.title or ('休業日' if self.is_closed else '')
+
+    @property
+    def group_list(self):
+        """見せるグループ（名前の順）。prefetch_related('groups') してあれば、その結果を使う"""
+        return sorted(self.groups.all(), key=lambda g: (g.name, g.pk))
+
+    @property
+    def audience(self):
+        """見せる相手を短く（全員／グループの名前）"""
+        names = [g.name for g in self.group_list]
+        return '・'.join(names) if names else '全員'
+
+    @property
+    def for_everyone(self):
+        return not self.group_list
 
 
 class UseRequest(models.Model):

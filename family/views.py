@@ -598,9 +598,19 @@ class StaffCalendarView(StaffCalendarMixin, View):
         year, month = yotei.parse_ym(request.GET.get('ym'))
         editing = request.GET.get('edit') == '1'
         view = yotei.month_view(self.facility, year, month)
+        days = [c for w in view['weeks'] for c in w if c['in_month']]
+        if editing:
+            # 編集の画面：日ごとに、予定（1 件以上）と、その見せる相手・詳しい内容
+            for c in days:
+                rows = [{'title': e.title, 'detail': e.detail, 'gids': {g.pk for g in e.group_list}} for e in c['events']
+                        if e.title or e.detail.strip()] or [{'title': '', 'detail': '', 'gids': set()}]
+                for i, r in enumerate(rows):
+                    r['i'] = i
+                c['rows'] = rows
         return render(request, 'family/staff_calendar.html', {
             **view, 'editing': editing, 'cal_day_base': reverse('family:staff_calendar') + 'day/', 'cal_query': '&edit=1' if editing else '',
-            'days': [c for w in view['weeks'] for c in w if c['in_month']], 'title_max': DayEvent.TITLE_MAX,
+            'days': days, 'title_max': DayEvent.TITLE_MAX, 'detail_max': DayEvent.DETAIL_MAX, 'max_per_day': DayEvent.MAX_PER_DAY,
+            'notice_groups': yotei.facility_groups(self.facility) if editing else [],
             'groups': yotei.unseen_groups(self.facility) if self.facility.use_family_page else [],
         })
 
@@ -618,38 +628,37 @@ class StaffCalendarView(StaffCalendarMixin, View):
         changed, d = 0, first
         while d <= last:
             iso = d.isoformat()
-            if f't_{iso}' in request.POST:
-                changed += yotei.save_event(self.facility, d, request.POST.get(f't_{iso}', ''), f'c_{iso}' in request.POST,
-                                            '', request.user, keep_detail=True)
+            # 予定は 1 日に複数（t_日付_番号・m_日付_番号＝詳しい内容・g_日付_番号＝見せる相手。'all' か、グループの番号）
+            if f't_{iso}_0' in request.POST:
+                entries = []
+                for i in range(DayEvent.MAX_PER_DAY):
+                    if f't_{iso}_{i}' not in request.POST:
+                        continue
+                    picked = request.POST.getlist(f'g_{iso}_{i}')
+                    entries.append({'title': request.POST.get(f't_{iso}_{i}', ''), 'detail': request.POST.get(f'm_{iso}_{i}', ''),
+                                    'group_ids': [] if 'all' in picked else picked})
+                changed += yotei.save_day(self.facility, d, f'c_{iso}' in request.POST, entries, request.user)
             d += datetime.timedelta(days=1)
         messages.success(request, f'{changed} 日ぶんの予定を保存しました。' if changed else '変わったところはありません。')
         return redirect(back)
 
 
 class StaffCalendarDayView(StaffCalendarMixin, View):
-    """予定の 1 日ぶん：休業日・予定・詳しい内容（持ち物・参加費など）を書く。その日に来る子も出す"""
+    """
+    予定の 1 日ぶん（見るだけ）：その日の予定・見せる相手・詳しい内容と、その日に来る子。
+    書くのは、カレンダーの「編集」から（2026-11-22 成の要望。以前はここで書いていた）
+    """
 
-    def context(self, day, **extra):
+    def get(self, request, day):
         from schedules.daylist import day_visits
         from . import yotei
+        day = _day_or_404(day)
         coming, absent = day_visits(self.facility, day)
         requested = set(UseRequest.objects.filter(facility=self.facility, date=day).values_list('beneficiary_id', flat=True))
         for v in coming + absent:
             v.requested = v.beneficiary_id in requested
-        return {**yotei.day_info(self.facility, day), 'coming': coming, 'absent': absent, 'ym': f'{day.year}-{day.month:02d}',
-                'title_max': DayEvent.TITLE_MAX, 'detail_max': DayEvent.DETAIL_MAX, **extra}
-
-    def get(self, request, day):
-        return render(request, 'family/staff_calendar_day.html', self.context(_day_or_404(day)))
-
-    def post(self, request, day):
-        from django.urls import reverse
-        from . import yotei
-        day = _day_or_404(day)
-        p = request.POST
-        changed = yotei.save_event(self.facility, day, p.get('title', ''), 'is_closed' in p, p.get('detail', ''), request.user)
-        messages.success(request, f'{day.month}月{day.day}日の予定を保存しました。' if changed else '変わったところはありません。')
-        return redirect(f'{reverse("family:staff_calendar")}?ym={day.year}-{day.month:02d}')
+        return render(request, 'family/staff_calendar_day.html', {
+            **yotei.day_info(self.facility, day), 'coming': coming, 'absent': absent, 'ym': f'{day.year}-{day.month:02d}'})
 
 
 class StaffApplyView(StaffCalendarMixin, View):

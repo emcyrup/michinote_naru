@@ -520,6 +520,13 @@
       <a class="sidebar-toggle-btn simple-home-link" href="{% url 'records:simple_home' %}" aria-label="きょうの きろく へ">
         <i class="bi bi-house"></i>
       </a>
+      {% elif features.home_icons and not reservation_only %}
+      {# ホームがアイコンの並びの事業所：左上は「ホームへ戻る」。メニュー（三）は右端（メモの右）へ（2026-11-22 成の要望） #}
+      {% if request.resolver_match.view_name != 'facilities:home_icons' %}
+      <a class="sidebar-toggle-btn topbar-home-btn" id="topbarHome" href="{% url 'facilities:home_icons' %}" aria-label="ホームへ戻る" title="ホームへ戻る">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+      {% endif %}
       {% else %}
       <button class="sidebar-toggle-btn" id="sidebarToggle"
               aria-label="メニューを開く" onclick="toggleSidebar()">
@@ -540,6 +547,12 @@
         <button type="button" class="btn-memo"
                 data-bs-toggle="modal" data-bs-target="#globalMemoModal">
           <i class="bi bi-pencil-square"></i><span>メモ</span>
+        </button>
+        {% endif %}
+        {% if features.home_icons and user.ui_theme != 'simple' and not reservation_only %}
+        <button class="sidebar-toggle-btn" id="sidebarToggle"
+                aria-label="メニューを開く" onclick="toggleSidebar()">
+          <i class="bi bi-list"></i>
         </button>
         {% endif %}
       </div>
