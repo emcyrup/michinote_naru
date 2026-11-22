@@ -11,7 +11,7 @@
 | 入り方 | **メールアドレスとパスワード**。アカウントは職員が作る（保護者は自分では登録できない） |
 | LINE | 保留。いまの「公式 LINE から開く保護者ページ」（`/family/…`。`family/views.py` の `FamilyMixin`）は残してあるが、成の環境では LINE連携がオフなので開けない |
 | 環境 | 開発 `https://st-naru-family.ai-labo.cloud/`・本番 `https://naru-family.ai-labo.cloud/`（Gunicorn 8050・置き場所 `~/michinotenarufamily`） |
-| 配備 | Actions「Deploy (naru)」→ `app=family`。手順は `docs/DEPLOY_NARU.md` |
+| 配備 | Actions「Deploy (naru)」→ `app=family`。手順は `docs/DEPLOY_NARU.md`。`config.settings_family` で起動し、`SECRET_KEY` は職員向けと同じ値になる（配備が入れる）。**配備の前に、ブランチへ `main` を取り込む**（起動のスクリプト `deploy/venv-deploy.sh` が新しい版であること）。本番への配備は、依頼者（リポジトリの持ち主）が指示したときだけ |
 
 ## 守ってほしいこと
 
