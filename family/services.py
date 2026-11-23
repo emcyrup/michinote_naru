@@ -306,4 +306,10 @@ def book_rows(facility, day):
         if b_id not in listed:
             extra[b_id] = ns[0].beneficiary
     extra_rows = [row(c, None) for c in sorted(extra.values(), key=lambda c: (c.last_name_kana, c.first_name_kana, c.pk))]
-    return [row(v.beneficiary, v) for v in coming], [row(v.beneficiary, v) for v in absent], extra_rows
+    # 欠席の子：欠席時の対応の記録の有無（押すと、その記録を書く画面へ）
+    from .models import AbsenceRecord
+    done = {r.beneficiary_id: r for r in AbsenceRecord.objects.filter(facility=facility, date=day)}
+    absent_rows = [row(v.beneficiary, v) for v in absent]
+    for r in absent_rows:
+        r['absence'] = done.get(r['beneficiary'].pk)
+    return [row(v.beneficiary, v) for v in coming], absent_rows, extra_rows
