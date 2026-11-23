@@ -9,6 +9,7 @@
   .jm-sum { display: flex; gap: 14px; flex-wrap: wrap; font-size: .9rem; color: #555; margin-top: 4px; }
   .jm-sum b { color: #222; font-size: 1.05rem; }
   .jm-sum .is-warn { color: #a15c00; }
+  .jm-table .jm-absent a.jm-unset { font-size: .78rem; margin-left: 6px; color: #a15c00; }
   .jm-table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
   .jm-table th { background: #f3f0ea; font-size: .8rem; font-weight: 700; color: #555; padding: 8px 6px; text-align: center; white-space: nowrap; }
   .jm-table td { padding: 6px; border-top: 1px solid #eee9e0; text-align: center; vertical-align: middle; font-variant-numeric: tabular-nums; }
@@ -48,7 +49,8 @@
     <div class="jm-sum">
       <span>利用 <b>{{ days_used }}</b> 日</span>
       {% if total %}<span>合計 <b>{{ total }}</b></span>{% endif %}
-      {% if days_absent %}<span>欠席 <b>{{ days_absent }}</b> 日</span>{% endif %}
+      {% if days_absent %}<span>欠席 <b>{{ days_absent }}</b> 日{% if days_absent_addon %}（うち欠席時対応加算 <b>{{ days_absent_addon }}</b> 日）{% endif %}</span>{% endif %}
+      {% if days_absent_unset and features.family_page %}<span class="is-warn"><i class="bi bi-exclamation-triangle-fill"></i> 欠席時対応加算が未選択 <b>{{ days_absent_unset }}</b> 日</span>{% endif %}
       {% if days_missing %}<span class="is-warn"><i class="bi bi-exclamation-triangle-fill"></i> 時間が未入力 <b>{{ days_missing }}</b> 日</span>{% endif %}
     </div>
   </div>
@@ -64,7 +66,7 @@
         <tr class="{% if r.absent %}is-absent{% elif r.missing %}is-missing{% endif %}{% if r.weekday == '土' %} is-sat{% elif r.weekday == '日' %} is-sun{% endif %}{% if r.visit.date|date:'Y-m-d' == back %} is-today{% endif %}">
           <td class="jm-day">{{ r.visit.date|date:'j' }}日 <small>（{{ r.weekday }}）</small></td>
           {% if r.absent %}
-          <td colspan="3">欠席</td>
+          <td colspan="3" class="jm-absent">{% if r.addon == 'yes' %}<b>【欠席】</b>{% elif r.addon == 'no' %}<b>【−】</b>{% else %}欠席{% if features.family_page %} <a href="{% url 'family:staff_absence' child.pk %}?date={{ r.visit.date|date:'Y-m-d' }}" class="jm-unset">欠席時対応加算を選ぶ</a>{% endif %}{% endif %}</td>
           {% else %}
           <td><input type="time" name="s_{{ r.visit.pk }}" value="{{ r.start|time:'H:i' }}" step="300" aria-label="{{ r.visit.date|date:'j' }}日の始まり"></td>
           <td><input type="time" name="e_{{ r.visit.pk }}" value="{{ r.end|time:'H:i' }}" step="300" aria-label="{{ r.visit.date|date:'j' }}日の終わり"></td>

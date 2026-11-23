@@ -100,7 +100,7 @@
         <span class="jz-pad"></span>
         <a class="jz-link" href="{% url 'schedules:jisseki_month' r.beneficiary.pk day.year day.month %}?back={{ day|date:'Y-m-d' }}">
           <span class="dayitem-name">{{ r.beneficiary.full_name }} <small>さん</small></span>
-          <span class="dayitem-state" style="margin-left:auto;">欠席</span>
+          <span class="dayitem-state" style="margin-left:auto;">{% if r.addon == 'yes' %}【欠席】{% elif r.addon == 'no' %}【−】{% else %}欠席{% if features.family_page %}（加算 未選択）{% endif %}{% endif %}</span>
           <i class="bi bi-chevron-right text-muted" aria-hidden="true"></i>
         </a>
       </div>

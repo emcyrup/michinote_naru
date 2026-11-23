@@ -921,7 +921,7 @@ class CalendarTests(Base):
         self.assertIn(f'name="g_{i1}_0" value="all" checked', html)               # はじめは全員
         self.assertIn(f'name="g_{i1}_0" value="{sho.pk}"', html)
         self.assertNotIn('よそのグループ', html)
-        self.assertIn('べつのグループ向けの予定を足す', html)
+        self.assertIn('＋ 活動・お出かけ先を増やす', html)
         res = self.sc.post(self.scal, {
             'ym': self.ym, 'action': 'save',
             f't_{i1}_0': 'プログラミング', f'm_{i1}_0': '持ち物：タブレット', f'g_{i1}_0': [str(sho.pk), str(yoso.pk)],

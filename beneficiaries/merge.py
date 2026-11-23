@@ -31,6 +31,7 @@ UNIQUE_BY = {
     'billingrecord': (('year_month',), '請求'),
     'copaymentmanagement': (('year_month',), '上限額管理'),
     'contact_books': (('date',), '連絡帳'),
+    'absence_records': (('date',), '欠席時の対応の記録'),
 }
 # 同じものが両方にあれば、消すほうのぶんを捨てるもの：{関連の名前: 同じかどうかを見る欄}（例：同じお知らせが 2 人に届いている）
 DROP_DUPLICATES = {'notices_received': 'notice_id', 'route_pattern_stops': 'pattern_id', 'day_route_stops': 'route_id'}
