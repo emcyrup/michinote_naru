@@ -18,7 +18,7 @@ from beneficiaries.models import Guardian
 from line_integration.sending import push_text
 
 from . import services
-from .models import (ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, ParentNote,
+from .models import (AbsenceRecord, ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, ParentNote,
                      UseRequest)
 
 # 入場の印の有効期間（これを過ぎたら、LINE のリンクから入り直す）
@@ -547,6 +547,74 @@ class StaffBookEditView(LoginRequiredMixin, View):
         else:
             messages.info(request, '内容が変わっていないので、送り直していません。')
         return redirect(f'{reverse("family:staff_book")}?date={self.day.isoformat()}')
+
+
+class StaffAbsenceView(LoginRequiredMixin, View):
+    """
+    欠席の子（1 人・1 日）：上に保護者からの欠席連絡（「保護者からの連絡」と同じ文）、下に欠席時の対応の記録を書く欄。
+    印刷は、成の紙の様式の並び（StaffAbsencePrintView）。欠席時対応加算の選択は実績記録票の表示に使う
+    """
+
+    def setup_objects(self, request, beneficiary_pk):
+        from beneficiaries.models import Beneficiary
+        from schedules.daylist import parse_day
+        facility = request.user.facility
+        if facility is None or not facility.use_family_page:
+            raise Http404
+        self.facility = facility
+        self.child = get_object_or_404(Beneficiary, pk=beneficiary_pk, facility=facility)
+        self.day = parse_day(request.POST.get('date') or request.GET.get('date'))
+
+    def context(self, rec=None, saved=None, **extra):
+        from schedules.daylist import day_nav
+        from schedules.models import ScheduledVisit
+        from . import absence
+        msgs = absence.absence_messages(self.facility, self.child, self.day)
+        if rec is None:
+            rec, saved = absence.record_for(self.facility, self.child, self.day, msgs)
+        return {**day_nav(self.day), 'b': self.child, 'msgs': msgs, 'rec': rec, 'saved': saved,
+                'visit': ScheduledVisit.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first(),
+                'supports': absence.SUPPORTS, 'methods': absence.METHODS, 'reasons': absence.REASONS,
+                'note_max': AbsenceRecord.NOTE_MAX, 'staff_default': self.facility.absence_staff_default,
+                'day_nav_query': '', **extra}
+
+    def get(self, request, beneficiary_pk):
+        self.setup_objects(request, beneficiary_pk)
+        return render(request, 'family/staff_absence.html', self.context())
+
+    def post(self, request, beneficiary_pk):
+        from django.urls import reverse
+        from . import absence
+        self.setup_objects(request, beneficiary_pk)
+        rec, problem = absence.save(self.facility, self.child, self.day, request.POST, request.user)
+        if problem:
+            messages.error(request, problem)
+            return redirect(f'{reverse("family:staff_absence", args=[self.child.pk])}?date={self.day.isoformat()}')
+        text = f'{self.child.full_name} さんの欠席時の対応を保存しました。'
+        if rec.addon == AbsenceRecord.ADDON_YES:
+            text += '実績記録票に【欠席】と出ます。'
+        elif rec.addon == AbsenceRecord.ADDON_NO:
+            text += '実績記録票に【−】と出ます。'
+        messages.success(request, text)
+        if request.POST.get('then') == 'print':
+            return redirect(f'{reverse("family:staff_absence_print", args=[self.child.pk])}?date={self.day.isoformat()}')
+        return redirect(f'{reverse("family:staff_absence", args=[self.child.pk])}?date={self.day.isoformat()}')
+
+
+class StaffAbsencePrintView(StaffAbsenceView):
+    """欠席時の対応の記録を、紙の様式の並びで印刷する（保存ずみのものだけ）"""
+
+    def get(self, request, beneficiary_pk):
+        self.setup_objects(request, beneficiary_pk)
+        ctx = self.context()
+        if not ctx['saved']:
+            raise Http404
+        from schedules.daylist import WEEK_JP
+        ctx['next_weekday'] = WEEK_JP[ctx['rec'].next_date.weekday()] if ctx['rec'].next_date else ''
+        return render(request, 'family/staff_absence_print.html', ctx)
+
+    def post(self, request, beneficiary_pk):
+        raise Http404
 
 
 # =============================================

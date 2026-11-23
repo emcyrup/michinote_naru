@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block title %}欠席時の対応 {{ b.full_name }}（{{ day|date:'n月j日' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}連絡帳{% endblock %}
+{% block nav_family_book %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .bk-name { font-size: 1.2rem; font-weight: 700; }
+  .bk-state { font-size: .82rem; padding: 2px 10px; border-radius: 999px; background: #f1eee8; color: #555; }
+  .bk-state.ok { background: #e3f3e6; color: #1e6b33; }
+  /* 保護者からの連絡（「保護者からの連絡」の画面と同じ見た目） */
+  .fmsg { background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; padding: 12px 14px; }
+  .fmsg + .fmsg { margin-top: 8px; }
+  .fmsg-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .fmsg-name { font-size: 1.05rem; font-weight: 700; }
+  .fmsg-kind { font-size: .78rem; padding: 1px 9px; border-radius: 999px; background: #fde8e6; color: #b3261e; }
+  .fmsg-what, .fmsg-body { color: #c62828; font-weight: 700; }
+  .fmsg-body { white-space: pre-wrap; font-size: 1.02rem; margin: 6px 0; }
+  .fmsg-meta { font-size: .78rem; color: #777; }
+  .fmsg-ok { color: #1e6b33; font-size: .88rem; font-weight: 700; }
+  /* 欠席時の対応の記録 */
+  .ab-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 12px; padding: 14px; }
+  .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .ab-grid .wide { grid-column: 1 / -1; }
+  .ab-card label.f { display: block; font-size: .82rem; color: #6b655c; margin-bottom: 2px; font-weight: 700; }
+  .ab-card input[type=text], .ab-card input[type=date], .ab-card textarea { width: 100%; font-size: 1rem; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; }
+  .ab-sec { margin-top: 14px; }
+  .ab-sec-t { font-weight: 700; margin-bottom: 4px; }
+  .ab-checks label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; margin: 0 0 6px; border: 1px solid #e3ddd2; border-radius: 10px; cursor: pointer; background: #fff; line-height: 1.45; }
+  .ab-checks input { width: 22px; height: 22px; flex: 0 0 auto; margin-top: 1px; }
+  .ab-checks label:has(input:checked) { background: #eef4fc; border-color: #4d7ba8; }
+  .ab-inline { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ab-inline label { flex: 0 0 auto; align-items: center; margin: 0; }
+  .ab-small { font-size: .78rem; color: #8a8378; }
+  .ab-remember { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: .8rem; color: #6b655c; }
+  .ab-addon { margin-top: 16px; padding: 12px; border: 2px solid #e8b25a; border-radius: 12px; background: #fffaf0; }
+  .ab-addon .ab-inline label { padding: 10px 16px; font-weight: 700; }
+  .ab-addon label:has(input:checked) { background: #fff3d6; border-color: #c98a1a; }
+  .ab-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .ab-save .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .ab-save { padding-right: 76px; } }
+  @media (max-width: 520px) { .ab-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="mb-2"><a href="{% url 'family:staff_book' %}?date={{ day|date:'Y-m-d' }}" class="small"><i class="bi bi-chevron-left"></i> {{ day|date:'n月j日' }} の連絡帳の一覧へ</a></div>
+  {% include 'includes/day_nav.html' %}
+
+  <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+    <span class="bk-name">{{ b.full_name }} <small class="fw-normal text-muted">さん</small></span>
+    {% if visit and visit.status == 'absent' %}<span class="bk-state">この日は欠席</span>{% elif not visit %}<span class="bk-state">この日の来所予定なし</span>{% endif %}
+    {% if saved %}<span class="bk-state ok"><i class="bi bi-check-circle-fill"></i> 欠席時の対応を記録ずみ（{{ rec.updated_at|date:'n/j H:i' }}）</span>{% endif %}
+  </div>
+
+  <div class="daylist-head">保護者からの連絡（{{ day|date:'n月j日' }}）</div>
+  {% for m in msgs %}
+  <div class="fmsg">
+    <div class="fmsg-head">
+      <span class="fmsg-name">{{ b.full_name }} さん</span>
+      <span class="fmsg-kind">{{ m.title }}</span>
+    </div>
+    <div class="fmsg-what">欠席します{% if m.reason %}（{{ m.get_reason_display }}）{% endif %}</div>
+    {% if m.body %}<div class="fmsg-body">{{ m.body }}</div>{% endif %}
+    <div class="fmsg-meta">{{ m.sender_name }}・{{ m.created_at|date:'n/j H:i' }} 受信</div>
+    {% if m.is_confirmed %}<div class="mt-1"><span class="fmsg-ok"><i class="bi bi-check-circle-fill"></i> 確認済み</span>
+      <span class="fmsg-meta">{{ m.confirmed_at|date:'n/j H:i' }}{% if m.confirmed_by %}・{{ m.confirmed_by.get_full_name|default:m.confirmed_by.username }}{% endif %}</span></div>
+    {% else %}<div class="fmsg-meta mt-1">まだ確認していません（<a href="{% url 'family:staff_inbox' %}?date={{ m.sent_on|date:'Y-m-d' }}">保護者からの連絡</a>で確認）</div>{% endif %}
+  </div>
+  {% empty %}
+  <div class="ab-small ms-1">この日の欠席連絡は、保護者アプリからは届いていません（電話などで受けたときは、下に書きます）。</div>
+  {% endfor %}
+
+  <div class="daylist-head">欠席時の対応</div>
+  <form method="post" class="ab-card" id="ab-form">
+    {% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+    <div class="ab-grid">
+      <div><label class="f">利用日</label><div class="fw-bold" style="padding:8px 0;">{{ day|date:'Y年n月j日' }}（{{ weekday }}）</div></div>
+      <div>
+        <label class="f" for="ab-staff">対応した職員</label>
+        <input type="text" id="ab-staff" name="staff_name" value="{{ rec.staff_name }}" maxlength="60" placeholder="例：有園">
+        <label class="ab-remember"><input type="checkbox" name="remember_staff" value="1"{% if not staff_default %} checked{% endif %}> 次からも、この名前を最初に入れておく</label>
+      </div>
+      <div><label class="f" for="ab-cdate">連絡日</label><input type="text" id="ab-cdate" name="contact_date" value="{{ rec.contact_date }}" maxlength="30" placeholder="例：{{ msgs.0.created_at|date:'n/j'|default:'11/26' }}"></div>
+      <div><label class="f" for="ab-ctime">時間</label><input type="text" id="ab-ctime" name="contact_time" value="{{ rec.contact_time }}" maxlength="30" placeholder="例：{{ msgs.0.created_at|date:'G:i'|default:'8:30' }}"></div>
+      <div><label class="f" for="ab-person">連絡者</label><input type="text" id="ab-person" name="contact_person" value="{{ rec.contact_person }}" maxlength="30" placeholder="例：母"></div>
+      <div><label class="f" for="ab-next">次回利用予定日</label><input type="date" id="ab-next" name="next_date" value="{{ rec.next_date|date:'Y-m-d' }}">
+        <div class="ab-small">{% if saved %}保存した日です。{% else %}来所予定から、次に来る日を入れています（続けて休む連絡のある日はとばします）。{% endif %}</div></div>
+    </div>
+
+    <div class="ab-sec">
+      <div class="ab-sec-t">相談援助の概要</div>
+      <div class="ab-checks">
+        {% for k, label in supports %}<label><input type="checkbox" name="supports" value="{{ k }}"{% if k in rec.supports %} checked{% endif %}> <span>{{ label }}</span></label>{% endfor %}
+      </div>
+    </div>
+    <div class="ab-sec">
+      <div class="ab-sec-t">相談支援の方法</div>
+      <div class="ab-checks ab-inline">
+        {% for k, label in methods %}<label><input type="checkbox" name="methods" value="{{ k }}"{% if k in rec.methods %} checked{% endif %}> <span>{{ label }}</span></label>{% endfor %}
+      </div>
+    </div>
+    <div class="ab-sec">
+      <div class="ab-sec-t">欠席理由</div>
+      <div class="ab-checks ab-inline">
+        {% for k, label in reasons %}<label><input type="checkbox" name="reasons" value="{{ k }}"{% if k in rec.reasons %} checked{% endif %}> <span>{{ label }}</span></label>{% endfor %}
+      </div>
+      {% if not saved and rec.reasons %}<div class="ab-small">保護者の欠席連絡の理由から、印を付けています。</div>{% endif %}
+    </div>
+    <div class="ab-sec">
+      <label class="ab-sec-t" for="ab-note">備考欄</label>
+      <textarea id="ab-note" name="note" rows="4" maxlength="{{ note_max }}" placeholder="自由に書けます">{{ rec.note }}</textarea>
+    </div>
+
+    <div class="ab-addon">
+      <div class="ab-sec-t">欠席時対応加算</div>
+      <div class="ab-checks ab-inline" role="radiogroup" aria-label="欠席時対応加算">
+        <label><input type="radio" name="addon" value="yes"{% if rec.addon == 'yes' %} checked{% endif %}> 該当</label>
+        <label><input type="radio" name="addon" value="no"{% if rec.addon == 'no' %} checked{% endif %}> 該当しない</label>
+      </div>
+      <div class="ab-small">該当 → 実績記録票に【欠席】／該当しない → 【−】と出ます。</div>
+    </div>
+
+    <div class="ab-save">
+      <button type="submit" class="btn btn-primary">保存する</button>
+      <button type="submit" name="then" value="print" class="btn btn-outline-primary"><i class="bi bi-printer me-1"></i>保存して印刷</button>
+    </div>
+  </form>
+
+  <div class="text-center mt-3 small">
+    <a href="{% url 'family:staff_book_edit' b.pk %}?date={{ day|date:'Y-m-d' }}">この日の連絡帳を書く</a>
+    <span class="mx-2 text-muted">|</span>
+    <a href="{% url 'schedules:jisseki_month' b.pk day.year day.month %}?back={{ day|date:'Y-m-d' }}">実績記録票（{{ day.month }}月）</a>
+  </div>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('ab-form'), dirty = false;
+  form.addEventListener('input', function () { dirty = true; });
+  form.addEventListener('change', function () { dirty = true; });
+  form.addEventListener('submit', function () { dirty = false; });
+  window.addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+{% endblock %}

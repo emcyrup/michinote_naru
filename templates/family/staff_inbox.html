@@ -42,6 +42,7 @@
     </div>
     {% if m.is_absence %}<div class="fmsg-what">欠席します{% if m.reason %}（{{ m.get_reason_display }}）{% endif %}</div>{% endif %}
     {% if m.body %}<div class="fmsg-body">{{ m.body }}</div>{% endif %}
+    {% if m.is_absence and m.beneficiary and m.is_confirmed %}<div class="small mb-1"><a href="{% url 'family:staff_absence' m.beneficiary.pk %}?date={{ m.target_date|date:'Y-m-d' }}"><i class="bi bi-journal-text"></i> 欠席時の対応を書く</a></div>{% endif %}
     <div class="fmsg-foot">
       <span class="fmsg-meta">{{ m.sender_name }}・{{ m.created_at|date:'n/j H:i' }} 受信</span>
       {% if m.is_confirmed %}
