@@ -12,10 +12,12 @@
   <noscript><button class="btn btn-outline-secondary btn-sm">切り替える</button></noscript>
 </form>
 {% endif %}
+{% if request_due %}<a href="{% url 'familyapp:calendar' %}?ym={{ request_due|date:'Y-m' }}" class="fm-due"><i class="bi bi-calendar-plus" aria-hidden="true"></i><span>{{ request_due|date:'n' }}月分の利用日申請をしてください。<small>締め切り：今月の末日</small></span><i class="bi bi-chevron-right" aria-hidden="true"></i></a>{% endif %}
 <nav class="fm-icons" aria-label="メニュー">
   {% for it in icons %}
   <a href="{{ it.href }}">
     {% if it.soon %}<span class="fm-soon">準備中</span>{% endif %}
+    {% if it.flag %}<span class="fm-flag">{{ it.flag }}</span>{% endif %}
     {% if it.badge %}<span class="fm-badge" aria-label="まだ読んでいないもの {{ it.badge }} 件">{{ it.badge }}</span>{% endif %}
     <span class="fm-icon">{% if it.icon %}<i class="bi {{ it.icon }}" aria-hidden="true"></i>{% else %}<span class="fm-kanji" aria-hidden="true">{{ it.text }}</span>{% endif %}</span>
     <span class="fm-label">{{ it.label }}</span>

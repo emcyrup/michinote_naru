@@ -253,8 +253,9 @@ class ScreenTests(FamilyAppTestCase):
 
     # ---- 予定と利用日申請
     def test_calendar_and_request(self):
-        day = self.today + datetime.timedelta(days=3)
-        closed = self.today + datetime.timedelta(days=4)
+        start = views.request_window()[0]          # 申請できる最初の日（来月の 1 日）
+        day = start + datetime.timedelta(days=3)
+        closed = start + datetime.timedelta(days=4)
         yotei.save_event(self.f, day, 'クッキング', False, '持ち物：エプロン', self.staff)
         yotei.save_event(self.f, closed, '', True, '', self.staff)
         url = reverse('familyapp:calendar')
@@ -269,11 +270,98 @@ class ScreenTests(FamilyAppTestCase):
         self.assertRedirects(r, f'{url}?ym={ym}&apply=1&err=1')
         r = self.client.post(url, {'ym': ym, 'dates': [day.isoformat(), closed.isoformat(), self.today.isoformat()]})
         self.assertRedirects(r, f'{url}?ym={ym}&done=1', fetch_redirect_response=False)
-        # 承認なしで来所予定になる。休業日・きょうは入らない
+        # 承認なしで来所予定になる。休業日・きょう（締め切りずみ）は入らない
         self.assertEqual(list(ScheduledVisit.objects.filter(beneficiary=self.taro).values_list('date', flat=True)), [day])
         req = UseRequest.objects.get()
         self.assertEqual((req.beneficiary, req.account), (self.taro, self.account))
         self.assertContains(self.client.get(f'{url}?ym={ym}&done=1'), '利用日を申請しました')
+
+    # ---- 利用日申請：締め切り・1 日ずつの申請・未申請の印（2026-11-24 成の要望）
+    def test_request_window_starts_next_month(self):
+        first, last = views.request_window()
+        self.assertEqual(first.day, 1)
+        self.assertEqual((first.year * 12 + first.month) - (self.today.year * 12 + self.today.month), 1)
+        self.assertEqual(last, yotei.parent_window()[1])
+        # 今月の日は、まとめての申請でも入らない
+        url = reverse('familyapp:calendar')
+        late = self.today + datetime.timedelta(days=1)
+        if late < first:
+            r = self.client.post(url, {'ym': f'{late.year}-{late.month:02d}', 'dates': [late.isoformat()]})
+            self.assertIn('err=1', r['Location'])
+            self.assertFalse(ScheduledVisit.objects.filter(beneficiary=self.taro).exists())
+
+    def test_apply_one_day_from_day_page(self):
+        day = views.request_window()[0] + datetime.timedelta(days=5)
+        url = reverse('familyapp:calendar_day', args=[day.isoformat()])
+        r = self.client.get(url)
+        self.assertContains(r, '利用する')
+        self.assertNotContains(r, '利用の予定はありません')
+        r = self.client.post(url)
+        self.assertRedirects(r, url + '?done=1', fetch_redirect_response=False)
+        self.assertEqual(list(ScheduledVisit.objects.filter(beneficiary=self.taro).values_list('date', flat=True)), [day])
+        self.assertEqual(UseRequest.objects.get().account, self.account)
+        r = self.client.get(url + '?done=1')
+        self.assertContains(r, '利用を申請しました')
+        self.assertContains(r, '利用の予定')
+        self.assertNotContains(r, '>利用する<')
+        # もう一度押しても、増えない
+        self.client.post(url)
+        self.assertEqual(ScheduledVisit.objects.filter(beneficiary=self.taro).count(), 1)
+        # 休業日は押せない
+        closed = day + datetime.timedelta(days=1)
+        yotei.save_event(self.f, closed, '', True, '', self.staff)
+        self.assertNotContains(self.client.get(reverse('familyapp:calendar_day', args=[closed.isoformat()])), '>利用する<')
+
+    def test_day_page_after_deadline(self):
+        first = views.request_window()[0]
+        late = self.today + datetime.timedelta(days=1)
+        if late >= first:
+            self.skipTest('月末の日は、あしたがもう来月')
+        url = reverse('familyapp:calendar_day', args=[late.isoformat()])
+        r = self.client.get(url)
+        self.assertNotContains(r, '>利用する<')
+        self.assertContains(r, '締め切りました')
+        self.client.post(url)
+        self.assertFalse(ScheduledVisit.objects.exists())
+        self.assertEqual(self.client.session.get(views.CalendarDayView.FLASH), 'skipped')
+        # 過ぎた日は、何も出さない
+        past = self.today - datetime.timedelta(days=1)
+        r = self.client.get(reverse('familyapp:calendar_day', args=[past.isoformat()]))
+        self.assertNotContains(r, '締め切りました')
+        self.assertNotContains(r, '利用の予定はありません')
+
+    def test_home_icon_order_and_due_flag(self):
+        r = self.client.get(reverse('familyapp:home'))
+        html = r.content.decode()
+        order = ['保護者より', '見本の事業所より', 'お知らせ', '欠席連絡', 'その他の連絡', '利用日申請', '実績記録票', '個別支援計画']
+        nav = html[html.index('fm-icons'):]
+        pos = [nav.index(f'<span class="fm-label">{t}' if 'より' not in t else t) for t in order]
+        self.assertEqual(pos, sorted(pos))
+        due = views.request_due(self.f, self.taro)
+        self.assertEqual(due, views.request_window()[0])   # 来月の 1 日
+        self.assertContains(r, '未申請')
+        self.assertContains(r, f'{due.month}月分の利用日申請をしてください。')
+        self.assertContains(self.client.get(reverse('familyapp:calendar')), f'{due.month}月分の利用日申請をしてください。')
+        # 来月の予定が 1 日でも入れば（職員の代理申請でも）消える
+        yotei.apply_days(self.f, self.taro, [due + datetime.timedelta(days=2)], via='staff', staff=self.staff)
+        r = self.client.get(reverse('familyapp:home'))
+        self.assertNotContains(r, '未申請')
+        self.assertNotContains(r, '利用日申請をしてください')
+        # きょうだいは、その子のぶんで見る
+        self.pick(self.hana)
+        self.assertContains(self.client.get(reverse('familyapp:home')), '未申請')
+
+    def test_calendar_has_no_month_agenda(self):
+        day = views.request_window()[0] + datetime.timedelta(days=3)
+        yotei.save_event(self.f, day, 'クッキング', False, '持ち物：エプロン', self.staff)
+        r = self.client.get(f"{reverse('familyapp:calendar')}?ym={day.year}-{day.month:02d}")
+        self.assertContains(r, 'クッキング')                  # カレンダーの中には出る
+        self.assertNotContains(r, f'{day.month}月の予定')     # 下の一覧は出さない
+        self.assertNotContains(r, '<ul class="cal-agenda"')
+        # いまの月を見ていても、「利用日を申請する」は申請できる月を開く
+        r = self.client.get(reverse('familyapp:calendar'))
+        first = views.request_window()[0]
+        self.assertContains(r, f'?ym={first.year}-{first.month:02d}&apply=1')
 
     def test_calendar_shows_only_events_for_this_childs_groups(self):
         # 予定ごとの見せる相手（2026-11-22〜）：全員向けと、その子が入っているグループ向けだけ。グループの名前は出さない

@@ -9,6 +9,7 @@
   {% if flash.skipped %}<div class="alert alert-warning">次の日は申請できませんでした（休業日か、すでに予定のある日）：{% for d in flash.skipped %}{{ d|date:'n/j（D）' }}{% if not forloop.last %}・{% endif %}{% endfor %}</div>{% endif %}
 {% endif %}
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if request_due and not flash %}<div class="alert alert-danger py-2"><i class="bi bi-exclamation-circle-fill me-1"></i>{{ request_due|date:'n' }}月分の利用日申請をしてください。</div>{% endif %}
 
 {% include 'family/_cal_nav.html' %}
 
@@ -30,28 +31,16 @@
     </div>
     <button type="submit" class="fm-btn mt-2" id="cal-send-btn">送信</button>
   </div>
-  <div class="fm-meta mt-2">月を替えると、選んだ日は消えます。月ごとに送信してください。きょうの利用や、申請した日の取り消しは、お電話か「欠席連絡」でお知らせください。</div>
+  <div class="fm-meta mt-2">申請の締め切りは、その前の月の末日です（いまは {{ window.0|date:'n月j日' }} から申請できます）。月を替えると、選んだ日は消えます。月ごとに送信してください。きょうの利用や、申請した日の取り消しは、お電話か「欠席連絡」でお知らせください。</div>
 </form>
 {% include 'family/_cal_pick_js.html' %}
 {% else %}
 {% include 'family/_cal_grid.html' %}
 <div class="cal-legend">
   <span><span class="cal-mark is-use">利用</span> {{ child.full_name }} さんの利用予定</span>
-  <span><i class="bi bi-info-circle-fill" style="border:0;width:auto;height:auto;color:#8a8378;"></i>日付を押すと詳しい内容</span>
+  <span><i class="bi bi-info-circle-fill" style="border:0;width:auto;height:auto;color:#8a8378;"></i>日付を押すと詳しい内容・1 日ずつの申請</span>
 </div>
-<a href="?ym={{ ym }}&apply=1" class="fm-btn mt-3 text-center text-decoration-none" id="cal-apply-btn"><i class="bi bi-calendar-plus me-1"></i>利用日を申請する</a>
+<a href="?ym={{ apply_ym }}&apply=1" class="fm-btn mt-3 text-center text-decoration-none" id="cal-apply-btn"><i class="bi bi-calendar-plus me-1"></i>利用日を申請する</a>
 
-{% if agenda %}
-<div class="fw-bold mt-4 mb-2">{{ month }}月の予定</div>
-<ul class="cal-agenda">
-  {% for c in agenda %}
-  <li><a href="{{ cal_day_base }}{{ c.iso }}/">
-    <span class="d">{{ c.date|date:'j日' }}（{{ c.weekday }}）</span>
-    <span class="t{% if c.is_closed %} is-closed{% endif %}">{{ c.label|default:'（詳しい内容あり）' }}{% if c.has_detail %} <small><i class="bi bi-info-circle-fill"></i></small>{% endif %}</span>
-    <i class="bi bi-chevron-right text-muted"></i>
-  </a></li>
-  {% endfor %}
-</ul>
-{% endif %}
 {% endif %}
 {% endblock %}

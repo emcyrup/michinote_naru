@@ -24,17 +24,44 @@ from . import auth
 # 連絡帳（成より）の「確認済み」を付ける時：True＝開いたら付く／False＝「確認しました」を押したら付く（成に確認中。いまは見本と同じ「開いたら」）
 BOOK_READ_ON_OPEN = True
 
-# ホームのアイコン（3 列）
+# ホームのアイコン（3 列。この順に左上から並ぶ。2026-11-24 成の要望）
 ICONS = [
-    {'key': 'from_facility', 'label': '連絡帳\n{facility}より', 'icon': 'bi-journal-arrow-down', 'url': 'familyapp:book_from'},
     {'key': 'to_facility', 'label': '連絡帳\n保護者より', 'icon': 'bi-journal-arrow-up', 'url': 'familyapp:book_to'},
+    {'key': 'from_facility', 'label': '連絡帳\n{facility}より', 'icon': 'bi-journal-arrow-down', 'url': 'familyapp:book_from'},
+    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': 'familyapp:notice'},
     {'key': 'absence', 'label': '欠席連絡', 'icon': '', 'text': '欠', 'url': 'familyapp:absence'},
     {'key': 'message', 'label': 'その他の連絡', 'icon': 'bi-telephone', 'url': 'familyapp:message'},
-    {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'familyapp:record', 'soon': True},
     {'key': 'request', 'label': '利用日申請', 'icon': 'bi-calendar3', 'url': 'familyapp:calendar'},
-    {'key': 'oshirase', 'label': 'お知らせ', 'icon': 'bi-envelope', 'url': 'familyapp:notice'},
+    {'key': 'jisseki', 'label': '実績記録票', 'icon': 'bi-clipboard-check', 'url': 'familyapp:record', 'soon': True},
     {'key': 'plan', 'label': '個別支援計画', 'icon': 'bi-file-earmark-text', 'url': 'familyapp:plan'},
 ]
+
+
+# ---------------------------------------------------------------- 利用日申請の締め切り（2026-11-24 成の要望）
+# ある月の利用日は、その前の月の末日までに申請する。保護者から申請できるのは「来月の 1 日」から（いまの月の残りの日は締め切りずみ）。
+# 職員の代理申請（family/views.py の StaffApplyView）には効かない。先の端は、これまでどおり yotei.parent_window() の終わり。
+def _first_of_next_month(today):
+    return (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1)
+
+
+def request_window():
+    """保護者が申請できる日の範囲 (はじめ, おわり)"""
+    today = timezone.localdate()
+    first, last = yotei.parent_window()
+    return max(first, _first_of_next_month(today)), last
+
+
+def request_due(facility, child):
+    """
+    来月分の利用日申請がまだなら、その月の 1 日（datetime.date）。済んでいれば None。
+    「まだ」＝来月の利用の予定（欠席を含む）が 1 日も無い。職員が代理で入れたものも「済み」に数える
+    """
+    from schedules.models import ScheduledVisit
+    first = _first_of_next_month(timezone.localdate())
+    last = _first_of_next_month(first) - datetime.timedelta(days=1)
+    if ScheduledVisit.objects.filter(facility=facility, beneficiary=child, date__range=(first, last)).exists():
+        return None
+    return first
 
 
 def _safe_next(request, value):
@@ -167,9 +194,11 @@ class HomeView(FamilyView):
     def get(self, request):
         unread = services.unread_books(self.facility, self.child).count()
         news = notices.unread_count(self.facility, self.child)
+        due = request_due(self.facility, self.child)
         icons = [{**it, 'label': it['label'].format(facility=self.facility.name), 'href': reverse(it['url']),
-                  'badge': unread if it['key'] == 'from_facility' else news if it['key'] == 'oshirase' else 0} for it in ICONS]
-        return self.page('familyapp/home.html', icons=icons, welcome=request.GET.get('welcome') == '1')
+                  'badge': unread if it['key'] == 'from_facility' else news if it['key'] == 'oshirase' else 0,
+                  'flag': '未申請' if it['key'] == 'request' and due else ''} for it in ICONS]
+        return self.page('familyapp/home.html', icons=icons, welcome=request.GET.get('welcome') == '1', request_due=due)
 
 
 class ChildSelectView(FamilyView):
@@ -305,7 +334,7 @@ class CalendarView(FamilyView):
     def get(self, request):
         year, month = yotei.parse_ym(request.GET.get('ym'))
         applying = request.GET.get('apply') == '1'
-        window = yotei.parent_window()
+        window = request_window()
         view = yotei.month_view(self.facility, year, month, child=self.child, window=window if applying else None)
         flash = request.session.pop(self.FLASH, None) if request.GET.get('done') == '1' else None
         if flash:
@@ -314,12 +343,15 @@ class CalendarView(FamilyView):
                          cal_day_base=reverse('familyapp:calendar') + 'day/', cal_query='&apply=1' if applying else '',
                          window=window, flash=flash,
                          error='日にちを選んでから送信してください。' if request.GET.get('err') == '1' else '',
-                         can_pick_any=any(c.get('can_pick') for w in view['weeks'] for c in w))
+                         can_pick_any=any(c.get('can_pick') for w in view['weeks'] for c in w),
+                         request_due=request_due(self.facility, self.child),
+                         # 「利用日を申請する」で開く月：締め切りを過ぎた月を見ているときは、申請できる最初の月へ
+                         apply_ym=max(view['ym'], f'{window[0].year}-{window[0].month:02d}'))
 
     def post(self, request):
         year, month = yotei.parse_ym(request.POST.get('ym'))
         ym = f'{year}-{month:02d}'
-        days = yotei.clean_days(request.POST.getlist('dates'), yotei.parent_window())
+        days = yotei.clean_days(request.POST.getlist('dates'), request_window())
         if not days:
             return redirect(f'{reverse("familyapp:calendar")}?ym={ym}&apply=1&err=1')
         made, skipped = yotei.apply_days(self.facility, self.child, days, via='parent',
@@ -330,15 +362,42 @@ class CalendarView(FamilyView):
 
 
 class CalendarDayView(FamilyView):
-    """日付を押したときの画面（その日の予定・持ち物や参加費などの詳しい内容）"""
+    """
+    日付を押したときの画面（その日の予定・持ち物や参加費などの詳しい内容）。
+    申請できる日（締め切り前・休業日でない・まだ予定が無い）なら「利用する」で、その 1 日だけを申請できる
+    """
+    FLASH = 'family_flash_day'
 
-    def get(self, request, day):
+    def get_day(self, day):
         try:
-            day = datetime.date.fromisoformat(str(day))
+            return datetime.date.fromisoformat(str(day))
         except ValueError:
             raise Http404 from None
-        return self.page('familyapp/calendar_day.html', **yotei.day_info(self.facility, day, self.child),
-                         ym=f'{day.year}-{day.month:02d}')
+
+    def get(self, request, day):
+        day = self.get_day(day)
+        info = yotei.day_info(self.facility, day, self.child)
+        window = request_window()
+        open_ = window[0] <= day <= window[1]
+        closed = bool(info['event'] and info['event'].is_closed)
+        free = not info['use'] and not info['absent']
+        flash = request.session.pop(self.FLASH, None) if request.GET.get('done') == '1' else None
+        return self.page('familyapp/calendar_day.html', **info, ym=f'{day.year}-{day.month:02d}', flash=flash,
+                         can_apply=open_ and free and not closed,
+                         # 締め切りを過ぎた、この先の日（きょうから、申請できる最初の日の前まで）
+                         past_due=free and not closed and timezone.localdate() <= day < window[0])
+
+    def post(self, request, day):
+        day = self.get_day(day)
+        url = reverse('familyapp:calendar_day', args=[day.isoformat()])
+        days = yotei.clean_days([day.isoformat()], request_window())
+        made = []
+        if days:
+            made, _ = yotei.apply_days(self.facility, self.child, days, via='parent',
+                                       sender_name=services.sender_label(self.guardian),
+                                       account=services.account_of(self.guardian))
+        request.session[self.FLASH] = 'made' if made else 'skipped'
+        return redirect(url + '?done=1')
 
 
 # ---------------------------------------------------------------- お知らせ
