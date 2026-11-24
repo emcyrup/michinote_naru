@@ -549,7 +549,7 @@ STAFF_HOME_ICONS = [
 STAFF_OTHER_ICONS = [
     {'key': 'sougei', 'label': '送迎記録', 'icon': 'bi-car-front', 'url': 'transport:day', 'needs': 'transport'},
     {'key': 'kenshu', 'label': '研修', 'icon': 'bi-mortarboard', 'url': None},
-    {'key': 'plan_sheet', 'label': '支援計画シート', 'icon': 'bi-file-earmark-ruled', 'url': None},
+    {'key': 'plan_sheet', 'label': '支援計画シート', 'icon': 'bi-file-earmark-ruled', 'url': 'support_plans:behavior_list'},
 ]
 
 

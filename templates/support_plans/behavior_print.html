@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>支援計画シート {{ b.full_name }} {{ s.made_on|date:'Y-m-d' }}</title>
+{# 厚生労働省の例（支援計画シート／支援手順書 兼 記録用紙）の並び。成のいまの様式を受け取ったら合わせ直す #}
+<style>
+  body { font-family: "BIZ UDPGothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #111; margin: 0; padding: 20px; font-size: 11px; line-height: 1.45; background: #fff; }
+  .page { max-width: 760px; margin: 0 auto 28px; }
+  .page + .page { break-before: page; page-break-before: always; }
+  h1 { font-size: 15px; text-align: center; margin: 0 0 8px; letter-spacing: .1em; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  td, th { border: 1px solid #222; padding: 4px 5px; vertical-align: top; }
+  th { background: #e6e6e6; font-weight: 700; text-align: center; vertical-align: middle; }
+  .sub { background: #f2f2f2; text-align: center; font-weight: 700; }
+  .pre { white-space: pre-wrap; }
+  .c { text-align: center; vertical-align: middle; }
+  .cap { border: 1px solid #222; border-bottom: 0; padding: 4px 6px; font-weight: 700; }
+  .head td { padding: 5px 6px; }
+  .head .lbl { background: #e6e6e6; font-weight: 700; text-align: center; white-space: nowrap; }
+  .main { height: 232mm; }
+  .steps td { height: 54px; }
+  .gap { border: 0; width: 2%; }
+  .notes { border: 1.5px solid #222; padding: 6px 8px; margin-top: 10px; min-height: 110px; }
+  .notes b { display: block; }
+  .toolbar { text-align: right; margin: 0 auto 12px; max-width: 760px; }
+  .toolbar a, .toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #4e7d89; background: #4e7d89; color: #fff; cursor: pointer; text-decoration: none; margin-left: 6px; font-size: 14px; }
+  .toolbar a.outline { background: #fff; color: #4e7d89; }
+  @page { size: A4 portrait; margin: 10mm; }
+  @media print { .toolbar { display: none; } body { padding: 0; } .page { margin: 0; max-width: none; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a class="outline" href="{% url 'support_plans:behavior_edit' s.pk %}">もどる</a>
+  <button type="button" id="print-btn">印刷する（2 枚）</button>
+</div>
+
+<div class="page">
+  <table>
+    <colgroup><col style="width:30%"><col style="width:26%"><col style="width:16%"><col style="width:28%"></colgroup>
+    <tr><td colspan="4" class="cap" style="border-bottom:1px solid #222;">支援計画シート　氏名（{{ b.full_name }}）　支援計画者（{{ s.planner }}）<span style="float:right;font-weight:400;">作成日 {{ s.made_on|date:'Y年n月j日' }}</span></td></tr>
+    <tr><th>インテーク<br>（情報の収集・整理）</th><th colspan="2">アセスメント<br>（評価）</th><th>プランニング<br>（支援計画）</th></tr>
+    <tr><th>情報<br><small>（見たこと、聴いたこと、資料などから）</small></th><th>理解・解釈・仮説<br><small>（わかったこと、推測したこと）</small></th><th>支援課題<br><small>（支援の必要なこと）</small></th><th>対応・方針<br><small>（やろうと思うこと）</small></th></tr>
+    <tr class="main">
+      <td class="pre">{{ s.intake }}</td>
+      <td style="padding:0;">
+        <div class="sub">生物的なこと<br><small>（疾患や障害、気質など）</small></div><div class="pre" style="padding:4px 5px;min-height:58mm;">{{ s.bio }}</div>
+        <div class="sub" style="border-top:1px solid #222;">心理的なこと<br><small>（不安、葛藤、希望、感情など）</small></div><div class="pre" style="padding:4px 5px;min-height:58mm;">{{ s.psycho }}</div>
+        <div class="sub" style="border-top:1px solid #222;">社会的なこと<br><small>（家庭、施設・学校、地域資源など）</small></div><div class="pre" style="padding:4px 5px;min-height:58mm;">{{ s.social }}</div>
+      </td>
+      <td colspan="2" style="padding:0;">
+        <table style="border:0;">
+          <colgroup><col style="width:36%"><col style="width:64%"></colgroup>
+          {% for t in tasks %}
+          <tr><td style="border-width:0 1px 1px 0;min-height:80px;" class="pre">{{ marks|slice:forloop.counter|last }}　{{ t.title }}</td>
+              <td style="border-width:0 0 1px 0;" class="pre">{{ t.policy }}</td></tr>
+          {% empty %}
+          <tr><td style="border-width:0 1px 0 0;height:300px;"></td><td style="border:0;"></td></tr>
+          {% endfor %}
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div class="page">
+  <h1>支援手順書 兼 記録用紙</h1>
+  <table class="head">
+    <colgroup><col style="width:13%"><col style="width:22%"><col style="width:13%"><col style="width:17%"><col style="width:12%"><col style="width:23%"></colgroup>
+    <tr><td class="lbl">利用者名</td><td>{{ b.full_name }}</td><td class="lbl">サービス提供日</td><td colspan="1">{% if s.service_date %}{{ s.service_date|date:'Y年n月j日' }}{% endif %}</td><td class="lbl">作成者名</td><td>{{ s.planner }}</td></tr>
+  </table>
+  <table class="head" style="margin-top:-1px;">
+    <colgroup><col style="width:13%"><col style="width:22%"><col style="width:11%"><col style="width:15%"><col style="width:8%"><col style="width:12%"><col style="width:9%"><col style="width:10%"></colgroup>
+    {% for p in providers %}
+    <tr><td class="lbl">事業所名{{ marks|slice:forloop.counter|last }}</td><td>{{ p.office }}</td><td class="lbl">サービス名</td><td>{{ p.service }}</td><td class="lbl">時間</td><td>{{ p.time }}</td><td class="lbl">提供者名</td><td>{{ p.staff }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <table class="steps" style="margin-top:10px;">
+    <colgroup><col style="width:10%"><col style="width:8%"><col style="width:45%"><col style="width:2%"><col style="width:8%"><col style="width:27%"></colgroup>
+    <tr><th>時間</th><th>活動</th><th>サービス手順</th><td class="gap"></td><th>チェック</th><th>様子</th></tr>
+    {% for st in steps %}
+    <tr><td class="pre">{{ st.time }}</td><td class="pre">{{ st.activity }}</td><td class="pre">{{ st.procedure }}</td><td class="gap"></td><td class="c">{{ st.check }}</td><td class="pre">{{ st.note }}</td></tr>
+    {% endfor %}
+    {% for _ in blank_steps %}<tr><td></td><td></td><td></td><td class="gap"></td><td></td><td></td></tr>{% endfor %}
+  </table>
+
+  <div class="notes"><b>【連絡事項】</b><div class="pre">{{ s.contact_note }}</div><br><b>【問い合わせ事項】</b><div class="pre">{{ s.inquiry_note }}</div></div>
+</div>
+<script>document.getElementById('print-btn').addEventListener('click', function () { window.print(); });</script>
+</body>
+</html>
