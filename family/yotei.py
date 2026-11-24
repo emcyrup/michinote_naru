@@ -2,6 +2,8 @@
 予定のカレンダーと利用日申請（2026-11 事業所「成」の要望）。
 
 - カレンダーは日曜始まり。日付の下に、休業日・活動の予定・お出かけ先（DayEvent.title）。日付を押すと詳しい内容（持ち物・参加費など）
+- 予定ごとに見せる相手を選べる（全員／お知らせと同じグループ）。同じ日に、グループごとに違う予定を入れられる。
+  保護者（child を渡したとき）には、全員向けと、その子が入っているグループ向けの予定だけを出す
 - 職員の画面と保護者ページで同じものを出す（保護者は見るだけ）
 - 利用日申請：保護者がカレンダーで日にちを選んで送る。職員が代わりに入れることもできる
   申請した日は、そのまま来所予定（ScheduledVisit）になる → 連絡帳・日誌・実績記録票の日ごとの一覧に出る
@@ -52,8 +54,63 @@ def staff_window():
     return today - datetime.timedelta(days=STAFF_BACK_DAYS), today + datetime.timedelta(days=STAFF_AHEAD_DAYS)
 
 
-def events_between(facility, first, last):
-    return {e.date: e for e in DayEvent.objects.filter(facility=facility, date__range=(first, last))}
+class DaySummary:
+    """
+    1 日ぶんの予定をまとめたもの（画面に出す形）。以前は 1 日 1 件だったので、同じ名前の欄（title・label・detail・is_closed）を持つ。
+    events が、その日の予定（見せてよいものだけ）。show_audience（職員の画面）なら、全員向けでない予定に見せる相手を添える
+    """
+
+    def __init__(self, events, show_audience=False):
+        self.events = list(events)
+        self.is_closed = any(e.is_closed for e in self.events)
+        named = [e for e in self.events if e.title]
+        self.title = '／'.join(self._name(e, show_audience) for e in named)
+        self.label = self.title or ('休業日' if self.is_closed else '')
+        detailed = [e for e in self.events if e.detail.strip()]
+        if len(detailed) == 1 and len(named) <= 1:
+            self.detail = detailed[0].detail
+        else:
+            self.detail = '\n\n'.join(f'【{self._name(e, show_audience) or "予定"}】\n{e.detail.strip()}' for e in detailed)
+
+    @staticmethod
+    def _name(e, show_audience):
+        return f'{e.title}（{e.audience}）' if show_audience and e.title and not e.for_everyone else e.title
+
+    def __bool__(self):
+        # 休業日の印だけの日（見せる予定が無い保護者にも、休業日は出す）も「予定あり」
+        return bool(self.events) or self.is_closed
+
+
+def child_group_ids(child):
+    """その子が入っているグループ（お知らせと同じ NoticeGroup）"""
+    return set(child.notice_groups.values_list('pk', flat=True)) if child is not None else set()
+
+
+def _visible(events, child, group_ids):
+    """child を渡したとき（保護者）：全員向けと、その子のグループ向けだけ。渡さなければ（職員）全部"""
+    if child is None:
+        return list(events)
+    return [e for e in events if e.for_everyone or group_ids & {g.pk for g in e.group_list}]
+
+
+def events_between(facility, first, last, child=None):
+    """日付 → その日の予定のまとめ（DaySummary）。予定の無い日は入らない"""
+    by_day = {}
+    for e in DayEvent.objects.filter(facility=facility, date__range=(first, last)).prefetch_related('groups'):
+        by_day.setdefault(e.date, []).append(e)
+    gids = child_group_ids(child)
+    out = {}
+    for d, events in by_day.items():
+        seen = _visible(events, child, gids)
+        # 休業日の印は、どのグループ向けの予定に付いていても、全員に効く
+        closed = any(e.is_closed for e in events)
+        if seen or closed:
+            summary = DaySummary(seen, show_audience=child is None)
+            if closed and not summary.is_closed:
+                summary.is_closed = True
+                summary.label = summary.title or '休業日'
+            out[d] = summary
+    return out
 
 
 def month_view(facility, year, month, child=None, window=None):
@@ -64,7 +121,7 @@ def month_view(facility, year, month, child=None, window=None):
     """
     first, last = month_span(year, month)
     weeks_raw = calendar.Calendar(firstweekday=6).monthdatescalendar(year, month)
-    events = events_between(facility, first, last)
+    events = events_between(facility, first, last, child)
     visits = ScheduledVisit.objects.filter(facility=facility, date__range=(first, last))
     mine, counts = {}, {}
     if child is not None:
@@ -87,7 +144,7 @@ def month_view(facility, year, month, child=None, window=None):
                 'date': d, 'in_month': True, 'iso': d.isoformat(), 'is_today': d == today,
                 'weekday': WEEK_JP[d.weekday()], 'is_sun': d.weekday() == 6 or bool(hol), 'is_sat': d.weekday() == 5 and not hol,
                 'holiday': hol, 'event': ev, 'label': ev.label if ev else '', 'is_closed': bool(ev and ev.is_closed),
-                'has_detail': bool(ev and ev.detail.strip()), 'count': counts.get(d, 0),
+                'has_detail': bool(ev and ev.detail.strip()), 'count': counts.get(d, 0), 'events': ev.events if ev else [],
                 'use': bool(v and v.status != ScheduledVisit.STATUS_ABSENT),
                 'absent': bool(v and v.status == ScheduledVisit.STATUS_ABSENT),
             }
@@ -169,31 +226,61 @@ def mark_seen(facility, staff):
     return unseen_requests(facility).update(seen_at=timezone.now(), seen_by=staff)
 
 
-def save_event(facility, day, title, is_closed, detail, staff, keep_detail=False):
-    """1 日ぶんの予定を保存する。何も無くなったら消す。変わったら True"""
-    title = (title or '').strip()[:DayEvent.TITLE_MAX]
-    ev = DayEvent.objects.filter(facility=facility, date=day).first()
-    detail = (ev.detail if ev else '') if keep_detail else (detail or '').strip()[:DayEvent.DETAIL_MAX]
-    if not title and not is_closed and not detail:
-        if ev:
+def facility_groups(facility):
+    """予定の見せる相手に選べるグループ（お知らせのグループ）"""
+    from .models import NoticeGroup
+    return list(NoticeGroup.objects.filter(facility=facility).order_by('name', 'pk'))
+
+
+def save_day(facility, day, is_closed, entries, staff):
+    """
+    1 日ぶんの予定をまとめて保存する。変わったら True。
+    entries：[{'title': 文, 'detail': 文, 'group_ids': [グループの番号…]}, …]（並びの順。空の予定は捨てる。MAX_PER_DAY 件まで）
+    group_ids が空なら全員向け。この事業所のグループでない番号は捨てる。
+    休業日の印は、1 件目の予定に付ける（予定が無ければ、印だけの 1 件を作る）。何も無くなったら、その日の予定を消す。
+    """
+    valid = {g.pk: g for g in facility_groups(facility)}
+    want = []
+    for e in entries:
+        title = (e.get('title') or '').strip()[:DayEvent.TITLE_MAX]
+        detail = (e.get('detail') or '').strip()[:DayEvent.DETAIL_MAX]
+        if not title and not detail:
+            continue
+        gids = sorted({int(g) for g in (e.get('group_ids') or []) if str(g).isdigit() and int(g) in valid})
+        want.append((title, detail, gids))
+    want = want[:DayEvent.MAX_PER_DAY]
+    if is_closed and not want:
+        want = [('', '', [])]
+    have = list(DayEvent.objects.filter(facility=facility, date=day).prefetch_related('groups'))
+    before = [(e.title, e.detail, sorted(g.pk for g in e.group_list), e.is_closed) for e in have]
+    after = [(t, d, g, bool(is_closed) and i == 0) for i, (t, d, g) in enumerate(want)]
+    if before == after:
+        return False
+    from django.db import transaction
+    with transaction.atomic():
+        for i, (title, detail, gids, closed) in enumerate(after):
+            ev = have[i] if i < len(have) else DayEvent(facility=facility, date=day)
+            ev.title, ev.detail, ev.is_closed, ev.order, ev.updated_by = title, detail, closed, i, staff
+            ev.save()
+            ev.groups.set([valid[g] for g in gids])
+        for ev in have[len(after):]:
             ev.delete()
-            return True
-        return False
-    if ev is None:
-        DayEvent.objects.create(facility=facility, date=day, title=title, is_closed=is_closed, detail=detail, updated_by=staff)
-        return True
-    if (ev.title, ev.is_closed, ev.detail) == (title, is_closed, detail):
-        return False
-    ev.title, ev.is_closed, ev.detail, ev.updated_by = title, is_closed, detail, staff
-    ev.save()
     return True
+
+
+def save_event(facility, day, title, is_closed, detail, staff, keep_detail=False):
+    """全員向けの予定を 1 件だけ持つ日として保存する（以前の入口。その日のほかの予定は消える）。変わったら True"""
+    if keep_detail:
+        ev = DayEvent.objects.filter(facility=facility, date=day).first()
+        detail = ev.detail if ev else ''
+    return save_day(facility, day, is_closed, [{'title': title, 'detail': detail, 'group_ids': []}], staff)
 
 
 def day_info(facility, day, child=None):
     """日付を押したときの画面に出すもの"""
-    ev = DayEvent.objects.filter(facility=facility, date=day).first()
+    ev = events_between(facility, day, day, child).get(day)
     info = {'day': day, 'weekday': WEEK_JP[day.weekday()], 'holiday': holiday_name(day) or '', 'event': ev,
-            'is_today': day == timezone.localdate()}
+            'events': ev.events if ev else [], 'is_today': day == timezone.localdate()}
     if child is not None:
         v = ScheduledVisit.objects.filter(facility=facility, beneficiary=child, date=day).first()
         info['use'] = bool(v and v.status != ScheduledVisit.STATUS_ABSENT)

@@ -833,6 +833,13 @@ textarea.form-control {
   flex-shrink: 0;
   transition: background 150ms ease;
 }
+/* 「ホームへ戻る」（ホームがアイコンの並びの事業所。左上。画面の広さによらず出す） */
+.topbar-home-btn {
+  display: flex;
+  text-decoration: none;
+  font-size: 1.25rem;
+  flex: 0 0 auto;
+}
 .sidebar-toggle-btn:hover {
   background: var(--sheet);
   border-color: var(--lake);

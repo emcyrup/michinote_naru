@@ -278,8 +278,9 @@ def _suggest_addons(visit, facility, target_date, beneficiary, individual_addons
                 return pk
         return None
 
-    # 欠席時対応加算：欠席ステータスから判定
-    if visit and visit.status == 'absent':
+    # 欠席時対応加算：欠席ステータスから判定。欠席時の対応の記録で「該当しない」を選んだ日は付けない
+    from family.absence import addon_of
+    if visit and visit.status == 'absent' and addon_of(facility, beneficiary, target_date) != 'no':
         pk = find_addon_id('欠席時対応加算')
         if pk:
             suggested_ids.add(pk)

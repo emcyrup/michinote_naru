@@ -13,6 +13,7 @@ from django.db import models
 from django.utils import timezone
 
 TOKEN_DAYS = 90          # 最後に使ってからこの日数で無効になる
+TOKEN_MAX_DAYS = 365     # 使い続けていても、ログインしてからこの日数で無効になる（もう一度ログインする）
 TOKENS_PER_USER = 10     # 1人が同時にログインしておける端末の数（古いものから消す）
 
 
@@ -55,7 +56,14 @@ class MobileToken(models.Model):
         token = cls.objects.select_related('user', 'user__facility').filter(key_hash=hash_key(key)).first()
         if token is None:
             return None
-        if token.last_used_at < timezone.now() - datetime.timedelta(days=TOKEN_DAYS):
+        now = timezone.now()
+        if (token.last_used_at < now - datetime.timedelta(days=TOKEN_DAYS)
+                or token.created_at < now - datetime.timedelta(days=TOKEN_MAX_DAYS)):
             token.delete()
             return None
         return token
+
+    @classmethod
+    def revoke_all(cls, user):
+        """その職員のアプリのログインをすべて切る（パスワードを変えたとき・無効にしたとき）。切った数を返す"""
+        return cls.objects.filter(user=user).delete()[0]

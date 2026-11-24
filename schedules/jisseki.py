@@ -57,6 +57,20 @@ def _row(visit, record):
     }
 
 
+def _mark_absences(facility, rows):
+    """
+    欠席の行に、欠席時対応加算の選択（欠席時の対応の記録。family.AbsenceRecord）を付ける。
+    'yes' → 実績記録票に【欠席】・'no' → 【−】・'' → まだ選んでいない
+    """
+    absent = [r for r in rows if r['absent']]
+    if not absent:
+        return
+    from family.absence import addon_marks
+    marks = addon_marks(facility, {r['visit'].beneficiary_id for r in absent}, {r['visit'].date for r in absent})
+    for r in absent:
+        r['addon'] = marks.get((r['visit'].beneficiary_id, r['visit'].date), '')
+
+
 def day_rows(facility, day):
     """日ごとの一覧：（来る子, 欠席の子）。連絡帳を送ったのに時間が入っていない子には warn"""
     coming, absent = day_visits(facility, day)
@@ -73,7 +87,9 @@ def day_rows(facility, day):
         r['book_sent'] = v.beneficiary_id in sent
         r['warn'] = r['book_sent'] and not r['done']
         rows.append(r)
-    return rows, [_row(v, None) for v in absent]
+    absent_rows = [_row(v, None) for v in absent]
+    _mark_absences(facility, absent_rows)
+    return rows, absent_rows
 
 
 def set_times(facility, visits, start, end):
@@ -123,6 +139,7 @@ def month_sheet(facility, child, year, month):
         r['weekday'] = WEEK_JP[v.date.weekday()]
         r['missing'] = not r['absent'] and not r['done'] and v.date <= today
         rows.append(r)
+    _mark_absences(facility, rows)
     used = [r for r in rows if not r['absent'] and (r['done'] or r['partial'])]
     total = sum(r['minutes'] or 0 for r in rows if not r['absent'])
     prev_m = first - datetime.timedelta(days=1)
@@ -130,6 +147,8 @@ def month_sheet(facility, child, year, month):
     return {
         'rows': rows, 'first': first, 'last': last,
         'days_used': len(used), 'days_absent': sum(1 for r in rows if r['absent']),
+        'days_absent_addon': sum(1 for r in rows if r['absent'] and r.get('addon') == 'yes'),
+        'days_absent_unset': sum(1 for r in rows if r['absent'] and not r.get('addon')),
         'days_missing': sum(1 for r in rows if r['missing']), 'total': fmt_minutes(total) if total else '',
         'prev_month': prev_m, 'next_month': next_m,
     }

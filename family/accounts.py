@@ -28,6 +28,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from beneficiaries.models import Guardian
@@ -50,10 +51,22 @@ def normalize_email(value):
 
 
 # ---------------------------------------------------------------- 職員の側
-def link_guardian(guardian, staff=None):
+class NeedsConfirm(AccountError):
+    """同じメールアドレスのアカウントがもうある。結びつける前に、職員に確かめてもらう（children＝いま見えている子の名前）"""
+
+    def __init__(self, account, children):
+        self.account, self.children = account, children
+        super().__init__(f'このメールアドレス（{account.email}）のアカウントは、もうあります（{"・".join(children) or "子どもなし"} の保護者）。'
+                         '同じ保護者（きょうだい）なら、もう一度「アカウントを作る」を押すと、同じアカウントに結びつきます。'
+                         '別の家庭なら、メールアドレスの入れまちがいです。保護者の「編集」で直してください。')
+
+
+def link_guardian(guardian, staff=None, confirm=False):
     """
     その保護者のメールアドレスで、保護者アプリのアカウントを用意して結びつける。
     同じ事業所に同じメールアドレスのアカウントがあれば、そこへ結びつける（きょうだい）。
+    ほかの子にもう結びついているアカウントへは、confirm=True のときだけ結びつける（そうでなければ NeedsConfirm）：
+    メールアドレスの入れまちがいで、別の家庭に連絡帳などが見えてしまうのを防ぐ。
     返り値：(アカウント, 新しく作ったか)
     """
     email = normalize_email(guardian.email)
@@ -71,8 +84,15 @@ def link_guardian(guardian, staff=None):
                 return link.account, False
             raise AccountError(f'この保護者は、すでに別のメールアドレス（{link.account.email}）のアカウントに結びついています。'
                                '変えるときは、いったん「アカウントを外す」を押してください。')
-        account, created = FamilyAccount.objects.get_or_create(
-            facility=facility, email=email, defaults={'password': make_password(None), 'created_by': staff})
+        account = FamilyAccount.objects.filter(facility=facility, email=email).first()
+        created = account is None
+        if created:
+            account = FamilyAccount.objects.create(facility=facility, email=email, password=make_password(None), created_by=staff)
+        elif not confirm:
+            others = [link.guardian.beneficiary.full_name for link in
+                      account.links.select_related('guardian__beneficiary').exclude(guardian__beneficiary=guardian.beneficiary)]
+            if others:
+                raise NeedsConfirm(account, others)
         FamilyAccountLink.objects.create(account=account, guardian=guardian)
     return account, created
 
@@ -96,12 +116,22 @@ def set_active(account, on):
     account.failed_count = 0
     account.locked_until = None
     account.save(update_fields=['is_active', 'failed_count', 'locked_until'])
+    revoke_links(account)      # 止めたときも戻したときも、前に出したリンクは使えなくする
     return account
 
 
 def _stamp(account):
-    # パスワードを決める（変える）と変わる値。合い言葉に混ぜて、1 回使ったリンクを使えなくする
-    return account.password[-16:]
+    # パスワードを決める（変える）と変わる値と、リンクの版。合い言葉に混ぜて、1 回使ったリンク・出し直す前のリンクを使えなくする。
+    # パスワードのハッシュそのものは入れない（合い言葉は署名つきだが、中身は読めるため）
+    import hashlib
+    return hashlib.sha256(f'{account.pk}:{account.link_version}:{account.password}'.encode()).hexdigest()[:24]
+
+
+def revoke_links(account):
+    """これまでに出したパスワード設定のリンクを、すべて使えなくする"""
+    FamilyAccount.objects.filter(pk=account.pk).update(link_version=F('link_version') + 1)
+    account.refresh_from_db(fields=['link_version'])
+    return account
 
 
 def setup_token(account):
@@ -130,6 +160,8 @@ def setup_url(account, base=None):
     base = (base or app_base_url()).rstrip('/')
     if not base:
         return ''
+    # 出し直すと、前のリンクは使えなくなる（使えるのは、最後に出した 1 本だけ）
+    revoke_links(account)
     url = base + SETUP_PATH.format(token=setup_token(account))
     FamilyAccount.objects.filter(pk=account.pk).update(invited_at=timezone.now())
     return url
@@ -201,15 +233,19 @@ def authenticate(email, password, facility=None):
         if account.is_locked:
             _burn(password)
             continue
-        if account.has_password and check_password(password, account.password):
+        if not account.has_password:
+            _burn(password)        # パスワード未設定のアカウントも、同じだけ時間をかける（招待ずみのアドレスかどうかを、応答の速さから読み取られないように）
+        elif check_password(password, account.password):
             if account.is_active and account.links.exists():
                 matched.append(account)
             continue
-        account.failed_count = (account.failed_count or 0) + 1
+        # まちがいの回数は DB の中で足す（同時に送られても、数えもれが出ないように）
+        FamilyAccount.objects.filter(pk=account.pk).update(failed_count=F('failed_count') + 1)
+        account.refresh_from_db(fields=['failed_count'])
         if account.failed_count >= MAX_FAILURES:
             account.locked_until = now + datetime.timedelta(minutes=LOCK_MINUTES)
             account.failed_count = 0
-        account.save(update_fields=['failed_count', 'locked_until'])
+            account.save(update_fields=['failed_count', 'locked_until'])
     if len(matched) != 1:
         return None
     account = matched[0]

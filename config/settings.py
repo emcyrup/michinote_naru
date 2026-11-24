@@ -53,6 +53,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',  # 画面が読み込める先を絞る（下の SECURE_CSP）
     'whitenoise.middleware.WhiteNoiseMiddleware',  # 静的ファイルをDjangoから直接配信
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -115,6 +116,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # カスタムユーザーモデル（StaffAccountで職員管理を行う）
 AUTH_USER_MODEL = 'accounts.StaffAccount'
+# ログインの一時ロックを、どの入口（ログイン画面・スマホアプリ用の API・管理画面）でも効かせる（accounts/backends.py）
+AUTHENTICATION_BACKENDS = ['accounts.backends.LockAwareBackend']
+# 前段の中継（nginx）の数。接続元の IP を X-Forwarded-For の末尾からこの数だけ戻って読む（accounts/security.py の client_ip）。
+# nginx の前に CDN などをもう 1 段置いたら 2 にする
+TRUSTED_PROXY_COUNT = config('TRUSTED_PROXY_COUNT', default=1, cast=int)
 
 LANGUAGE_CODE = 'ja'
 TIME_ZONE = 'Asia/Tokyo'
@@ -220,6 +226,31 @@ if not DEBUG:
         SECURE_HSTS_SECONDS = 31536000
         SECURE_HSTS_INCLUDE_SUBDOMAINS = True
         SECURE_HSTS_PRELOAD = True
+
+# 画面が読み込める先を絞る（Content-Security-Policy）。
+# 画面の中に書いたスクリプト・onclick と Alpine.js を使っているので 'unsafe-inline'・'unsafe-eval' は外せない。
+# それでも、よその場所のスクリプトを読ませない・よそへ送信させない・よその画面に埋め込ませない、は効く。
+# 読み込み先（CDN）を足したら、ここにも足す。CDN の部品は、テンプレートの integrity（SRI）で中身も確かめている。
+# .env の CSP_MODE：enforce（既定）・report（守らせず、ブラウザのコンソールに出すだけ）・off
+_CSP_CDN = ('https://cdn.jsdelivr.net', 'https://unpkg.com')
+_CSP_POLICY = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'", *_CSP_CDN],
+    'style-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://fonts.googleapis.com'],
+    'font-src': ["'self'", 'data:', 'https://cdn.jsdelivr.net', 'https://fonts.gstatic.com'],
+    'img-src': ["'self'", 'data:', 'blob:'],
+    'media-src': ["'self'", 'blob:'],
+    'connect-src': ["'self'"],
+    'frame-src': ["'self'", 'blob:'],
+    'worker-src': ["'self'", 'blob:'],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'self'"],
+}
+CSP_MODE = config('CSP_MODE', default='enforce')
+SECURE_CSP = _CSP_POLICY if CSP_MODE == 'enforce' else {}
+SECURE_CSP_REPORT_ONLY = _CSP_POLICY if CSP_MODE == 'report' else {}
 
 # ログ: アプリ内の例外を gunicorn の標準エラー（docker compose logs app）に出す
 LOGGING = {

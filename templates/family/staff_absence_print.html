@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>欠席時対応記録 {{ b.full_name }} {{ day|date:'Y-m-d' }}</title>
+{# 成の紙の様式（Excel）の並びに合わせた仮の形。様式のデータを受け取ったら、合わせ直す #}
+<style>
+  body { font-family: "BIZ UDPGothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #111; margin: 0; padding: 20px; font-size: 13px; line-height: 1.5; background: #fff; }
+  .sheet { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 6px; letter-spacing: .1em; }
+  .who { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  table.f { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.f td { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+  .lbl { white-space: nowrap; }
+  .c { text-align: center; vertical-align: middle !important; }
+  .chk { display: block; margin: 6px 0; }
+  .chk b { font-weight: 400; font-size: 15px; margin-right: 6px; }
+  .grid { display: grid; grid-template-columns: 62% 38%; align-items: stretch; }
+  .grid table { height: 100%; }
+  .grid .right { border-left: 0; }
+  .grid .right td:first-child { border-left: 0; }
+  .top { vertical-align: top !important; }
+  .list { text-align: left; display: table; margin: 10px auto 0; }
+  .tall { height: 13em; }
+  .note { white-space: pre-wrap; height: 9em; }
+  .toolbar { text-align: right; margin-bottom: 12px; }
+  .toolbar a, .toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #4e7d89; background: #4e7d89; color: #fff; cursor: pointer; text-decoration: none; margin-left: 6px; font-size: 14px; }
+  .toolbar a.outline { background: #fff; color: #4e7d89; }
+  @page { size: A4 landscape; margin: 12mm; }
+  @media print { .toolbar { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="toolbar">
+    <a class="outline" href="{% url 'family:staff_absence' b.pk %}?date={{ day|date:'Y-m-d' }}">もどる</a>
+    <button type="button" id="print-btn">印刷する</button>
+  </div>
+  <div class="who"><h1>欠席時対応記録</h1><div>{{ request.user.facility.name }}　氏名：<b>{{ b.full_name }}</b></div></div>
+  <div class="grid">
+    <table class="f left">
+      <colgroup><col style="width:18%"><col style="width:14%"><col style="width:22%"><col style="width:16%"><col style="width:30%"></colgroup>
+      <tr><td class="lbl">利用日：</td><td colspan="2">{{ day|date:'Y年n月j日' }}（{{ weekday }}）</td><td class="lbl">連絡日</td><td>{{ rec.contact_date }}</td></tr>
+      <tr><td class="c" colspan="2" rowspan="3">対応した職員</td><td class="c" rowspan="3">{{ rec.staff_name }}</td><td class="lbl">時間</td><td>{{ rec.contact_time }}</td></tr>
+      <tr><td class="lbl">連絡者</td><td>{{ rec.contact_person }}</td></tr>
+      <tr><td colspan="2" style="height:1.6em;"></td></tr>
+      <tr><td colspan="5" class="tall">相談援助の概要
+        {% for k, label in supports %}<span class="chk" style="margin-left:1.2em;"><b>{% if k in rec.supports %}☑{% else %}☐{% endif %}</b>{{ label }}</span>{% endfor %}
+      </td></tr>
+      <tr><td colspan="2" class="c">次回利用予定日</td><td colspan="3">{% if rec.next_date %}{{ rec.next_date|date:'Y年n月j日' }}（{{ next_weekday }}）{% endif %}</td></tr>
+    </table>
+    <table class="f right">
+      <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
+      <tr><td class="c top">相談支援の方法
+          <div class="list">{% for k, label in methods %}<span class="chk"><b>{% if k in rec.methods %}☑{% else %}☐{% endif %}</b>{{ label }}</span>{% endfor %}</div></td>
+        <td class="c top">欠席理由
+          <div class="list">{% for k, label in reasons %}<span class="chk"><b>{% if k in rec.reasons %}☑{% else %}☐{% endif %}</b>{{ label }}</span>{% endfor %}</div></td></tr>
+      <tr><td colspan="2" class="c">備考欄</td></tr>
+      <tr><td colspan="2" class="note">{{ rec.note }}</td></tr>
+    </table>
+  </div>
+</div>
+<script>document.getElementById('print-btn').addEventListener('click', function () { window.print(); });</script>
+</body>
+</html>

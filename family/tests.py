@@ -700,6 +700,39 @@ class BookTests(Base):
         self.assertEqual(html.count('class="ih-soon"'), 0)                              # 職員のアイコンは全部できている
 
 
+
+class TopbarTests(Base):
+    """画面の上：ホームがアイコンの並びの事業所では、左上が「ホームへ戻る」、メニュー（三）は右端（2026-11-22 成の要望）"""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.staff)
+
+    def bar(self, url):
+        html = self.client.get(url).content.decode()
+        bar = html[html.index('<div class="topbar'):]
+        return bar[:bar.index('<div class="page-content">')] if '<div class="page-content">' in bar else bar[:3000]
+
+    def test_back_to_home_on_the_left_and_menu_on_the_right(self):
+        bar = self.bar(reverse('family:staff_book'))
+        self.assertIn('id="topbarHome"', bar)
+        self.assertIn(f'href="{reverse("facilities:home_icons")}"', bar)
+        self.assertEqual(bar.count('id="sidebarToggle"'), 1)
+        self.assertLess(bar.index('id="topbarHome"'), bar.index('topbar-title'))          # 戻る → 題名 → メモ → メニュー の順
+        self.assertLess(bar.index('btn-memo'), bar.index('id="sidebarToggle"'))
+        # ホームの画面には「戻る」は出さない（メニューは右端のまま）
+        home = self.bar(reverse('facilities:home_icons'))
+        self.assertNotIn('id="topbarHome"', home)
+        self.assertLess(home.index('btn-memo'), home.index('id="sidebarToggle"'))
+
+    def test_other_facilities_keep_the_menu_on_the_left(self):
+        self.f.home_icons = False
+        self.f.save()
+        bar = self.bar(reverse('family:staff_book'))
+        self.assertNotIn('id="topbarHome"', bar)
+        self.assertEqual(bar.count('id="sidebarToggle"'), 1)
+        self.assertLess(bar.index('id="sidebarToggle"'), bar.index('topbar-title'))
+
 class CalendarTests(Base):
     """予定のカレンダー（職員と保護者で同じもの）・利用日申請（保護者／職員が代わりに）→ 来所予定・実績記録票へ"""
 
@@ -727,8 +760,9 @@ class CalendarTests(Base):
         self.assertEqual((view['prev_ym'], view['next_ym']), ('2026-11', '2027-01'))
 
     def test_staff_edits_month_and_parent_sees_same(self):
-        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': '動物園へおでかけ',
-                                       f't_{self.d2.isoformat()}': '', f'c_{self.d2.isoformat()}': 'on'}, follow=True)
+        i1, i2 = self.d1.isoformat(), self.d2.isoformat()
+        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{i1}_0': '動物園へおでかけ',
+                                       f't_{i2}_0': '', f'c_{i2}': 'on'}, follow=True)
         self.assertContains(res, '2 日ぶんの予定を保存しました。')
         self.assertContains(res, '動物園へおでかけ')
         ev = DayEvent.objects.get(facility=self.f, date=self.d2)
@@ -738,21 +772,38 @@ class CalendarTests(Base):
         self.assertIn('休業日', html)
         self.assertNotIn('name="t_', html)           # 保護者は見るだけ
         # 何も変えずに保存 → 変わらない。空にすると消える
-        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': '動物園へおでかけ'}, follow=True)
+        res = self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{i1}_0': '動物園へおでかけ'}, follow=True)
         self.assertContains(res, '変わったところはありません。')
-        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': ''})
+        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{i1}_0': ''})
         self.assertFalse(DayEvent.objects.filter(date=self.d1).exists())
 
-    def test_day_page_detail_and_month_save_keeps_detail(self):
-        url = reverse('family:staff_calendar_day', args=[self.d1.isoformat()])
-        res = self.sc.post(url, {'title': 'クッキング', 'detail': '持ち物：エプロン\n参加費：300 円'}, follow=True)
-        self.assertContains(res, f'{self.d1.month}月{self.d1.day}日の予定を保存しました。')
-        # 月の編集で題だけ直しても、詳しい内容は消えない
-        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{self.d1.isoformat()}': 'クッキング（カレー）'})
+    def test_detail_is_written_in_the_month_editor_and_day_page_is_read_only(self):
+        """詳しい内容は、編集の画面で日ごとに開いて書く。日付を押した画面は見るだけ（2026-11-22 成の要望）"""
+        i1 = self.d1.isoformat()
+        html = self.sc.get(f'{self.scal}?ym={self.ym}&edit=1').content.decode()
+        self.assertIn(f'name="t_{i1}_0"', html)
+        self.assertIn(f'name="m_{i1}_0"', html)                                   # 詳しい内容の欄（はじめは閉じている）
+        self.assertIn(f'id="m-{i1}-0" hidden', html)
+        self.assertIn(f'aria-controls="m-{i1}-0"', html)                          # 開く・閉じるボタン
+        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{i1}_0': 'クッキング', f'm_{i1}_0': '持ち物：エプロン\n参加費：300 円'})
         ev = DayEvent.objects.get(date=self.d1)
-        self.assertEqual((ev.title, ev.detail), ('クッキング（カレー）', '持ち物：エプロン\n参加費：300 円'))
-        html = self.client.get(reverse('family:calendar_day', args=[self.d1.isoformat()])).content.decode()
-        self.assertIn('クッキング（カレー）', html)
+        self.assertEqual((ev.title, ev.detail), ('クッキング', '持ち物：エプロン\n参加費：300 円'))
+        # 入っている日は、開くボタンに印が付く
+        self.assertIn('class="ce-more has-detail"', self.sc.get(f'{self.scal}?ym={self.ym}&edit=1').content.decode())
+        # 日付を押した画面：内容は読めるが、入力欄も保存ボタンも無い。送っても受け付けない
+        url = reverse('family:staff_calendar_day', args=[i1])
+        html = self.sc.get(url).content.decode()
+        self.assertIn('クッキング', html)
+        self.assertIn('参加費：300 円', html)
+        view = html[html.index('id="cd-view"'):]
+        view = view[:view.index('この日に来る予定の子')]
+        for word in ('<textarea', '<input', '<form', '保存する'):
+            self.assertNotIn(word, view, word)
+        self.assertIn(f'?ym={self.ym}&amp;edit=1#d-{i1}', html)                   # 「編集する」は編集の画面のその日へ
+        self.assertEqual(self.sc.post(url, {'title': '書きかえ', 'detail': 'x'}).status_code, 405)
+        self.assertEqual(DayEvent.objects.get(date=self.d1).title, 'クッキング')
+        html = self.client.get(reverse('family:calendar_day', args=[i1])).content.decode()
+        self.assertIn('クッキング', html)
         self.assertIn('参加費：300 円', html)
         self.assertNotIn('<textarea', html)
         self.assertIn('利用の予定はありません', html)
@@ -857,6 +908,91 @@ class CalendarTests(Base):
         self.assertEqual(self.client_class().get(self.cal).status_code, 403)                    # 入場の印が要る
         self.assertEqual(self.client_class().post(self.cal, {'dates': [self.d1.isoformat()]}).status_code, 403)
 
+
+    def test_plans_per_group_on_the_same_day(self):
+        """小学生と未就学で内容が違う日：予定ごとに見せるグループを選ぶ。保護者には、自分の子のグループの予定だけ"""
+        i1 = self.d1.isoformat()
+        sho = NoticeGroup.objects.create(facility=self.f, name='小学生')
+        mi = NoticeGroup.objects.create(facility=self.f, name='未就学')
+        yoso = NoticeGroup.objects.create(facility=self.other, name='よそのグループ')
+        sho.members.add(self.taro)
+        mi.members.add(self.hana)
+        html = self.sc.get(f'{self.scal}?ym={self.ym}&edit=1').content.decode()
+        self.assertIn(f'name="g_{i1}_0" value="all" checked', html)               # はじめは全員
+        self.assertIn(f'name="g_{i1}_0" value="{sho.pk}"', html)
+        self.assertNotIn('よそのグループ', html)
+        self.assertIn('＋ 活動・お出かけ先を増やす', html)
+        res = self.sc.post(self.scal, {
+            'ym': self.ym, 'action': 'save',
+            f't_{i1}_0': 'プログラミング', f'm_{i1}_0': '持ち物：タブレット', f'g_{i1}_0': [str(sho.pk), str(yoso.pk)],
+            f't_{i1}_1': 'リトミック', f'm_{i1}_1': '持ち物：うわばき', f'g_{i1}_1': [str(mi.pk)],
+            f't_{i1}_2': 'おやつ作り', f'g_{i1}_2': ['all', str(sho.pk)],            # 「全員」があれば全員
+        }, follow=True)
+        self.assertContains(res, '1 日ぶんの予定を保存しました。')
+        evs = list(DayEvent.objects.filter(facility=self.f, date=self.d1))
+        self.assertEqual([(e.title, e.audience) for e in evs], [('プログラミング', '小学生'), ('リトミック', '未就学'), ('おやつ作り', '全員')])
+        # 職員のカレンダー：全部と、見せる相手
+        html = self.sc.get(f'{self.scal}?ym={self.ym}').content.decode()
+        self.assertIn('プログラミング（小学生）／リトミック（未就学）／おやつ作り', html)
+        day = self.sc.get(reverse('family:staff_calendar_day', args=[i1])).content.decode()
+        for word in ('プログラミング', 'リトミック', 'おやつ作り', '持ち物：タブレット', '持ち物：うわばき', '小学生', '未就学', '全員'):
+            self.assertIn(word, day, word)
+        # 編集の画面を開き直すと、3 件とも出て、選んだグループに印
+        html = self.sc.get(f'{self.scal}?ym={self.ym}&edit=1').content.decode()
+        self.assertIn(f'name="t_{i1}_2" value="おやつ作り"', html)
+        self.assertIn(f'name="g_{i1}_1" value="{mi.pk}" checked', html)
+        self.assertNotIn(f'name="g_{i1}_1" value="all" checked', html)
+        # 保護者（太郎＝小学生）：小学生向けと全員向けだけ
+        cal = self.client.get(f'{self.cal}?ym={self.ym}').content.decode()
+        self.assertIn('プログラミング／おやつ作り', cal)
+        self.assertNotIn('リトミック', cal)
+        self.assertNotIn('（小学生）', cal)                                          # 保護者には、見せる相手は出さない
+        page = self.client.get(reverse('family:calendar_day', args=[i1])).content.decode()
+        self.assertIn('持ち物：タブレット', page)
+        self.assertNotIn('うわばき', page)
+        # きょうだい（花子＝未就学）に切り替えると、未就学向けと全員向け
+        self.client.post(reverse('family:child'), {'child': self.hana.pk})
+        cal = self.client.get(f'{self.cal}?ym={self.ym}').content.decode()
+        self.assertIn('リトミック／おやつ作り', cal)
+        self.assertNotIn('プログラミング', cal)
+        page = self.client.get(reverse('family:calendar_day', args=[i1])).content.decode()
+        self.assertIn('持ち物：うわばき', page)
+        self.assertNotIn('タブレット', page)
+        # 関数でも同じ（保護者アプリが使う入口）
+        info = self.yotei.day_info(self.f, self.d1, self.taro)
+        self.assertEqual([e.title for e in info['events']], ['プログラミング', 'おやつ作り'])
+        self.assertEqual(info['event'].title, 'プログラミング／おやつ作り')
+        self.assertEqual(self.yotei.day_info(self.f, self.d1, self.jiro)['event'].title, 'おやつ作り')      # どのグループでもない子
+        # 1 件を空にして保存すると、その 1 件だけ消える
+        self.sc.post(self.scal, {'ym': self.ym, 'action': 'save', f't_{i1}_0': 'プログラミング', f'm_{i1}_0': '持ち物：タブレット',
+                                 f'g_{i1}_0': [str(sho.pk)], f't_{i1}_1': '', f'm_{i1}_1': '', f't_{i1}_2': 'おやつ作り', f'g_{i1}_2': ['all']})
+        self.assertEqual([e.title for e in DayEvent.objects.filter(date=self.d1)], ['プログラミング', 'おやつ作り'])
+
+    def test_closed_day_applies_to_everyone_and_limits(self):
+        i1 = self.d1.isoformat()
+        sho = NoticeGroup.objects.create(facility=self.f, name='小学生')
+        sho.members.add(self.taro)
+        # 休業日の印は、グループ向けの予定しか無い日でも、全員に効く
+        self.yotei.save_day(self.f, self.d1, True, [{'title': '小学生だけのお楽しみ会', 'detail': '', 'group_ids': [sho.pk]}], self.staff)
+        for child in (self.taro, self.hana):
+            cell = next(c for w in self.yotei.month_view(self.f, self.d1.year, self.d1.month, child=child,
+                                                         window=self.yotei.parent_window())['weeks'] for c in w if c.get('iso') == i1)
+            self.assertTrue(cell['is_closed'])
+            self.assertFalse(cell['can_pick'])
+        self.assertEqual(self.yotei.day_info(self.f, self.d1, self.hana)['event'].label, '休業日')
+        self.assertEqual(self.yotei.day_info(self.f, self.d1, self.taro)['event'].label, '小学生だけのお楽しみ会')
+        made, skipped = self.yotei.apply_days(self.f, self.hana, [self.d1], via='staff', staff=self.staff)
+        self.assertEqual((made, skipped), ([], [self.d1]))
+        # 1 日に持てるのは MAX_PER_DAY 件まで。グループを消すと、その予定は全員向けに戻る
+        n = DayEvent.MAX_PER_DAY
+        self.yotei.save_day(self.f, self.d2, False, [{'title': f'予定{i}', 'detail': '', 'group_ids': [sho.pk]} for i in range(n + 3)], self.staff)
+        self.assertEqual(DayEvent.objects.filter(date=self.d2).count(), n)
+        sho.delete()
+        self.assertEqual({e.audience for e in DayEvent.objects.filter(date=self.d2)}, {'全員'})
+        # 以前の入口（1 日 1 件・全員向け）も使える
+        self.assertTrue(self.yotei.save_event(self.f, self.d2, 'まとめて 1 件', False, 'くわしく', self.staff))
+        self.assertEqual([(e.title, e.detail) for e in DayEvent.objects.filter(date=self.d2)], [('まとめて 1 件', 'くわしく')])
+        self.assertFalse(self.yotei.save_event(self.f, self.d2, 'まとめて 1 件', False, 'くわしく', self.staff))
 
 class NoticeTests(Base):
     """お知らせ：職員が書く（全員／グループ／児童個別・下書き・送信）→ 保護者ページに新しい順で出る"""

@@ -76,6 +76,9 @@ echo "python: $(python --version 2>&1) ($VENV)"
 python -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' || {
   echo "ERROR: Python $pyver は古すぎます（Django 6.1 は 3.12 以上）。プロバイダに Python 3.12 以上の venv を依頼してください"; exit 1; }
 
+# ログの末尾を出すとき（配備の失敗）：Actions のログは公開のことがあるので、日本語（利用者名など）と長い数字は伏せる
+mask_log() { LC_ALL=C sed -E 's/[^\x00-\x7F]/*/g; s/[0-9]{6,}/#/g; s/\*{4,}/***/g'; }
+
 running_pid() {
   local pid
   pid=$(cat "$PIDFILE" 2>/dev/null || true)
@@ -106,7 +109,7 @@ start() {
   if [ -n "$(running_pid)" ]; then
     echo "gunicorn: started on $BIND_HOST:$PORT (pid $(running_pid))"
   else
-    echo "ERROR: gunicorn が起動しませんでした"; tail -n 30 logs/gunicorn.out logs/error.log 2>/dev/null; exit 1
+    echo "ERROR: gunicorn が起動しませんでした"; tail -n 30 logs/gunicorn.out logs/error.log 2>/dev/null | mask_log; exit 1
   fi
 }
 
@@ -349,4 +352,4 @@ for _ in $(seq 1 20); do
   [ "$code" = "200" ] && { echo "healthz: ok"; exit 0; }
   sleep 1
 done
-echo "ERROR: healthz が応答しません。logs/error.log を確認してください"; tail -n 30 logs/gunicorn.out logs/error.log 2>/dev/null; exit 1
+echo "ERROR: healthz が応答しません。logs/error.log を確認してください"; tail -n 30 logs/gunicorn.out logs/error.log 2>/dev/null | mask_log; exit 1

@@ -18,7 +18,7 @@ from beneficiaries.models import Guardian
 from line_integration.sending import push_text
 
 from . import services
-from .models import (ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, ParentNote,
+from .models import (AbsenceRecord, ContactBook, DayEvent, FamilyAccess, FamilyMessage, Notice, NoticeGroup, ParentNote,
                      UseRequest)
 
 # 入場の印の有効期間（これを過ぎたら、LINE のリンクから入り直す）
@@ -345,9 +345,27 @@ class StaffAccountView(StaffGuardianMixin, View):
         action = request.POST.get('action')
         link = getattr(g, 'family_link', None)
         account = link.account if link is not None else None
+        from accounts import security
+        from accounts.models import StaffAccount
+
+        def log(text):
+            # だれが・どの保護者のアカウントに何をしたかを、職員・運用管理の記録に残す（メールアドレスは書かない）
+            security.admin_action(request, f'保護者「{g.full_name}」（{g.beneficiary.full_name} さん）の保護者アプリのアカウント：{text}')
+
+        senior = request.user.is_superuser or request.user.role in (StaffAccount.ROLE_ADMIN, StaffAccount.ROLE_CHILD_DEV_MANAGER)
         try:
             if action == 'create':
-                account, created = accounts.link_guardian(g, request.user)
+                # 同じメールアドレスのアカウントがもうあるときは、1 回目は知らせるだけ。同じ保護者でもう一度押すと結びつける
+                key = 'family_account_confirm'
+                confirm = request.session.pop(key, None) == g.pk
+                try:
+                    account, created = accounts.link_guardian(g, request.user, confirm=confirm)
+                except accounts.NeedsConfirm as e:
+                    request.session[key] = g.pk
+                    messages.warning(request, str(e))
+                    return self.back(g)
+                if not created:
+                    log('同じメールアドレスのアカウントに結びつけました')
                 if created:
                     messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを作りました（{account.email}）。'
                                               '「パスワード設定のリンク」を出して、保護者へ渡してください。')
@@ -356,10 +374,15 @@ class StaffAccountView(StaffGuardianMixin, View):
                                               'きょうだいを 1 つのアカウントで見られます。')
             elif account is None:
                 messages.error(request, 'この保護者には、まだ保護者アプリのアカウントがありません。')
+            elif action in ('link', 'mail') and account.has_password and not senior:
+                # パスワードが決まっているアカウントのリンクは、パスワードの決め直しになる（開いた人が、その保護者として入れる）
+                messages.error(request, 'この保護者はパスワードを設定ずみです。パスワードを決め直すリンクを出せるのは、管理者と児発管だけです。')
             elif action == 'link':
                 url = accounts.setup_url(account) if account.is_active else ''
                 if url:
-                    messages.success(request, f'{g.full_name} さんのパスワード設定のリンクです（{accounts.SETUP_DAYS} 日以内・1 回かぎり）。'
+                    if account.has_password:
+                        log('パスワードを決め直すリンクを出しました')
+                    messages.success(request, f'{g.full_name} さんのパスワード設定のリンクです（{accounts.SETUP_DAYS} 日以内・1 回かぎり。前に出したリンクは使えなくなりました）。'
                                               f'保護者へ渡してください： {url}')
                 elif not account.is_active:
                     messages.error(request, 'このアカウントは停止中です。先に「また使えるようにする」を押してください。')
@@ -368,15 +391,19 @@ class StaffAccountView(StaffGuardianMixin, View):
             elif action == 'mail':
                 ok, why = accounts.send_setup_mail(account) if account.is_active else (False, 'このアカウントは停止中です')
                 if ok:
+                    if account.has_password:
+                        log('パスワードを決め直すリンクをメールで送りました')
                     messages.success(request, f'{account.email} へ、パスワード設定のリンクを送りました。')
                 else:
                     messages.error(request, f'{why}。「パスワード設定のリンク」を出して、保護者へ渡してください。')
             elif action in ('stop', 'resume'):
                 accounts.set_active(account, action == 'resume')
+                log('また使えるようにしました' if action == 'resume' else '止めました')
                 messages.success(request, f'{g.full_name} さんの保護者アプリのアカウントを'
                                           + ('また使えるようにしました。' if action == 'resume' else '止めました（入れなくなります。記録は残ります）。'))
             elif action == 'unlink':
                 accounts.unlink_guardian(g)
+                log('外しました')
                 messages.success(request, f'{g.full_name} さんを保護者アプリのアカウントから外しました。')
             else:
                 messages.error(request, '操作が分かりませんでした。')
@@ -522,6 +549,74 @@ class StaffBookEditView(LoginRequiredMixin, View):
         return redirect(f'{reverse("family:staff_book")}?date={self.day.isoformat()}')
 
 
+class StaffAbsenceView(LoginRequiredMixin, View):
+    """
+    欠席の子（1 人・1 日）：上に保護者からの欠席連絡（「保護者からの連絡」と同じ文）、下に欠席時の対応の記録を書く欄。
+    印刷は、成の紙の様式の並び（StaffAbsencePrintView）。欠席時対応加算の選択は実績記録票の表示に使う
+    """
+
+    def setup_objects(self, request, beneficiary_pk):
+        from beneficiaries.models import Beneficiary
+        from schedules.daylist import parse_day
+        facility = request.user.facility
+        if facility is None or not facility.use_family_page:
+            raise Http404
+        self.facility = facility
+        self.child = get_object_or_404(Beneficiary, pk=beneficiary_pk, facility=facility)
+        self.day = parse_day(request.POST.get('date') or request.GET.get('date'))
+
+    def context(self, rec=None, saved=None, **extra):
+        from schedules.daylist import day_nav
+        from schedules.models import ScheduledVisit
+        from . import absence
+        msgs = absence.absence_messages(self.facility, self.child, self.day)
+        if rec is None:
+            rec, saved = absence.record_for(self.facility, self.child, self.day, msgs)
+        return {**day_nav(self.day), 'b': self.child, 'msgs': msgs, 'rec': rec, 'saved': saved,
+                'visit': ScheduledVisit.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first(),
+                'supports': absence.SUPPORTS, 'methods': absence.METHODS, 'reasons': absence.REASONS,
+                'note_max': AbsenceRecord.NOTE_MAX, 'staff_default': self.facility.absence_staff_default,
+                'day_nav_query': '', **extra}
+
+    def get(self, request, beneficiary_pk):
+        self.setup_objects(request, beneficiary_pk)
+        return render(request, 'family/staff_absence.html', self.context())
+
+    def post(self, request, beneficiary_pk):
+        from django.urls import reverse
+        from . import absence
+        self.setup_objects(request, beneficiary_pk)
+        rec, problem = absence.save(self.facility, self.child, self.day, request.POST, request.user)
+        if problem:
+            messages.error(request, problem)
+            return redirect(f'{reverse("family:staff_absence", args=[self.child.pk])}?date={self.day.isoformat()}')
+        text = f'{self.child.full_name} さんの欠席時の対応を保存しました。'
+        if rec.addon == AbsenceRecord.ADDON_YES:
+            text += '実績記録票に【欠席】と出ます。'
+        elif rec.addon == AbsenceRecord.ADDON_NO:
+            text += '実績記録票に【−】と出ます。'
+        messages.success(request, text)
+        if request.POST.get('then') == 'print':
+            return redirect(f'{reverse("family:staff_absence_print", args=[self.child.pk])}?date={self.day.isoformat()}')
+        return redirect(f'{reverse("family:staff_absence", args=[self.child.pk])}?date={self.day.isoformat()}')
+
+
+class StaffAbsencePrintView(StaffAbsenceView):
+    """欠席時の対応の記録を、紙の様式の並びで印刷する（保存ずみのものだけ）"""
+
+    def get(self, request, beneficiary_pk):
+        self.setup_objects(request, beneficiary_pk)
+        ctx = self.context()
+        if not ctx['saved']:
+            raise Http404
+        from schedules.daylist import WEEK_JP
+        ctx['next_weekday'] = WEEK_JP[ctx['rec'].next_date.weekday()] if ctx['rec'].next_date else ''
+        return render(request, 'family/staff_absence_print.html', ctx)
+
+    def post(self, request, beneficiary_pk):
+        raise Http404
+
+
 # =============================================
 # 予定のカレンダーと利用日申請（family/yotei.py）
 # =============================================
@@ -598,9 +693,19 @@ class StaffCalendarView(StaffCalendarMixin, View):
         year, month = yotei.parse_ym(request.GET.get('ym'))
         editing = request.GET.get('edit') == '1'
         view = yotei.month_view(self.facility, year, month)
+        days = [c for w in view['weeks'] for c in w if c['in_month']]
+        if editing:
+            # 編集の画面：日ごとに、予定（1 件以上）と、その見せる相手・詳しい内容
+            for c in days:
+                rows = [{'title': e.title, 'detail': e.detail, 'gids': {g.pk for g in e.group_list}} for e in c['events']
+                        if e.title or e.detail.strip()] or [{'title': '', 'detail': '', 'gids': set()}]
+                for i, r in enumerate(rows):
+                    r['i'] = i
+                c['rows'] = rows
         return render(request, 'family/staff_calendar.html', {
             **view, 'editing': editing, 'cal_day_base': reverse('family:staff_calendar') + 'day/', 'cal_query': '&edit=1' if editing else '',
-            'days': [c for w in view['weeks'] for c in w if c['in_month']], 'title_max': DayEvent.TITLE_MAX,
+            'days': days, 'title_max': DayEvent.TITLE_MAX, 'detail_max': DayEvent.DETAIL_MAX, 'max_per_day': DayEvent.MAX_PER_DAY,
+            'notice_groups': yotei.facility_groups(self.facility) if editing else [],
             'groups': yotei.unseen_groups(self.facility) if self.facility.use_family_page else [],
         })
 
@@ -618,38 +723,37 @@ class StaffCalendarView(StaffCalendarMixin, View):
         changed, d = 0, first
         while d <= last:
             iso = d.isoformat()
-            if f't_{iso}' in request.POST:
-                changed += yotei.save_event(self.facility, d, request.POST.get(f't_{iso}', ''), f'c_{iso}' in request.POST,
-                                            '', request.user, keep_detail=True)
+            # 予定は 1 日に複数（t_日付_番号・m_日付_番号＝詳しい内容・g_日付_番号＝見せる相手。'all' か、グループの番号）
+            if f't_{iso}_0' in request.POST:
+                entries = []
+                for i in range(DayEvent.MAX_PER_DAY):
+                    if f't_{iso}_{i}' not in request.POST:
+                        continue
+                    picked = request.POST.getlist(f'g_{iso}_{i}')
+                    entries.append({'title': request.POST.get(f't_{iso}_{i}', ''), 'detail': request.POST.get(f'm_{iso}_{i}', ''),
+                                    'group_ids': [] if 'all' in picked else picked})
+                changed += yotei.save_day(self.facility, d, f'c_{iso}' in request.POST, entries, request.user)
             d += datetime.timedelta(days=1)
         messages.success(request, f'{changed} 日ぶんの予定を保存しました。' if changed else '変わったところはありません。')
         return redirect(back)
 
 
 class StaffCalendarDayView(StaffCalendarMixin, View):
-    """予定の 1 日ぶん：休業日・予定・詳しい内容（持ち物・参加費など）を書く。その日に来る子も出す"""
+    """
+    予定の 1 日ぶん（見るだけ）：その日の予定・見せる相手・詳しい内容と、その日に来る子。
+    書くのは、カレンダーの「編集」から（2026-11-22 成の要望。以前はここで書いていた）
+    """
 
-    def context(self, day, **extra):
+    def get(self, request, day):
         from schedules.daylist import day_visits
         from . import yotei
+        day = _day_or_404(day)
         coming, absent = day_visits(self.facility, day)
         requested = set(UseRequest.objects.filter(facility=self.facility, date=day).values_list('beneficiary_id', flat=True))
         for v in coming + absent:
             v.requested = v.beneficiary_id in requested
-        return {**yotei.day_info(self.facility, day), 'coming': coming, 'absent': absent, 'ym': f'{day.year}-{day.month:02d}',
-                'title_max': DayEvent.TITLE_MAX, 'detail_max': DayEvent.DETAIL_MAX, **extra}
-
-    def get(self, request, day):
-        return render(request, 'family/staff_calendar_day.html', self.context(_day_or_404(day)))
-
-    def post(self, request, day):
-        from django.urls import reverse
-        from . import yotei
-        day = _day_or_404(day)
-        p = request.POST
-        changed = yotei.save_event(self.facility, day, p.get('title', ''), 'is_closed' in p, p.get('detail', ''), request.user)
-        messages.success(request, f'{day.month}月{day.day}日の予定を保存しました。' if changed else '変わったところはありません。')
-        return redirect(f'{reverse("family:staff_calendar")}?ym={day.year}-{day.month:02d}')
+        return render(request, 'family/staff_calendar_day.html', {
+            **yotei.day_info(self.facility, day), 'coming': coming, 'absent': absent, 'ym': f'{day.year}-{day.month:02d}'})
 
 
 class StaffApplyView(StaffCalendarMixin, View):
