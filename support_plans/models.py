@@ -442,3 +442,43 @@ class MonitoringRecord(models.Model):
 
     def __str__(self):
         return f'{self.plan} モニタリング {self.date}'
+
+
+class BehaviorSheet(models.Model):
+    """
+    支援計画シート（2 枚で 1 組。2026-11-24 成の要望）。強度行動障害児支援加算などで作る、厚生労働省の例の様式に沿ったもの。
+      1 枚目：支援計画シート … インテーク（情報）／アセスメント（理解・解釈・仮説：生物的・心理的・社会的なこと）／
+              支援課題と対応・方針（課題ごとに 1 行）
+      2 枚目：支援手順書 兼 記録用紙 … サービス提供日・事業所（3 つまで）・時間ごとの活動と手順・チェック・様子・連絡事項・問い合わせ事項
+    欄の一覧・AI の整文は support_plans/behavior.py。利用者ごとに何枚でも作れる（見直すときは写して作る）。
+    """
+    facility = models.ForeignKey('facilities.Facility', on_delete=models.CASCADE, related_name='behavior_sheets')
+    beneficiary = models.ForeignKey('beneficiaries.Beneficiary', on_delete=models.CASCADE, related_name='behavior_sheets',
+                                    verbose_name='利用者')
+    made_on = models.DateField(default=date.today, verbose_name='作成日')
+    planner = models.CharField(max_length=60, blank=True, verbose_name='支援計画者（作成者）')
+    # 1 枚目
+    intake = models.TextField(blank=True, verbose_name='情報（見たこと、聴いたこと、資料などから）')
+    bio = models.TextField(blank=True, verbose_name='生物的なこと（疾患や障害、気質など）')
+    psycho = models.TextField(blank=True, verbose_name='心理的なこと（不安、葛藤、希望、感情など）')
+    social = models.TextField(blank=True, verbose_name='社会的なこと（家庭、施設・学校、地域資源など）')
+    tasks = models.JSONField(default=list, blank=True, verbose_name='支援課題と対応・方針')        # [{'title', 'policy'}]
+    # 2 枚目
+    service_date = models.DateField(null=True, blank=True, verbose_name='サービス提供日')
+    providers = models.JSONField(default=list, blank=True, verbose_name='事業所')             # [{'office', 'service', 'time', 'staff'}]
+    steps = models.JSONField(default=list, blank=True, verbose_name='時間・活動・サービス手順')  # [{'time', 'activity', 'procedure', 'check', 'note'}]
+    contact_note = models.TextField(blank=True, verbose_name='連絡事項')
+    inquiry_note = models.TextField(blank=True, verbose_name='問い合わせ事項')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey('accounts.StaffAccount', on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+', verbose_name='最後に書いた職員')
+
+    class Meta:
+        verbose_name = '支援計画シート'
+        verbose_name_plural = '支援計画シート'
+        ordering = ['-made_on', '-pk']
+        indexes = [models.Index(fields=['facility', 'beneficiary'], name='behavior_sheet_child')]
+
+    def __str__(self):
+        return f'{self.beneficiary} の支援計画シート（{self.made_on}）'
