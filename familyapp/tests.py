@@ -275,6 +275,37 @@ class ScreenTests(FamilyAppTestCase):
         self.assertEqual((req.beneficiary, req.account), (self.taro, self.account))
         self.assertContains(self.client.get(f'{url}?ym={ym}&done=1'), '利用日を申請しました')
 
+    def test_calendar_shows_only_events_for_this_childs_groups(self):
+        # 予定ごとの見せる相手（2026-11-22〜）：全員向けと、その子が入っているグループ向けだけ。グループの名前は出さない
+        from family.models import NoticeGroup
+        mine = NoticeGroup.objects.create(facility=self.f, name='すいえいぐみ')
+        mine.members.set([self.taro])
+        theirs = NoticeGroup.objects.create(facility=self.f, name='よそぐみ')
+        theirs.members.set([self.jiro, self.hana])
+        day = self.today + datetime.timedelta(days=3)
+        yotei.save_day(self.f, day, False, [
+            {'title': 'おやつづくり', 'detail': '持ち物：エプロン', 'group_ids': []},
+            {'title': 'プール', 'detail': '持ち物：水着', 'group_ids': [mine.pk]},
+            {'title': 'えんそく', 'detail': '持ち物：おべんとう', 'group_ids': [theirs.pk]},
+        ], self.staff)
+        ym = f'{day.year}-{day.month:02d}'
+        cal = self.client.get(f"{reverse('familyapp:calendar')}?ym={ym}")
+        one = self.client.get(reverse('familyapp:calendar_day', args=[day.isoformat()]))
+        for r in (cal, one):
+            self.assertContains(r, 'おやつづくり')
+            self.assertContains(r, 'プール')
+            self.assertNotContains(r, 'えんそく')
+            self.assertNotContains(r, 'すいえいぐみ')
+            self.assertNotContains(r, 'よそぐみ')
+        self.assertContains(one, '持ち物：水着')
+        self.assertNotContains(one, '持ち物：おべんとう')
+        # きょうだいに切り替えると、その子のグループの予定になる
+        self.pick(self.hana)
+        one = self.client.get(reverse('familyapp:calendar_day', args=[day.isoformat()]))
+        self.assertContains(one, 'えんそく')
+        self.assertNotContains(one, 'プール')
+        self.assertNotContains(one, '持ち物：水着')
+
     # ---- お知らせ
     def test_notices_newest_first_and_marked_read(self):
         def send(title, children=None):
