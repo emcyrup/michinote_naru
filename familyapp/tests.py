@@ -30,7 +30,7 @@ class FamilyAppTestCase(TestCase):
         self.mother_hana = Guardian.objects.create(beneficiary=self.hana, last_name='見本', first_name='母', relation='mother', email='haha@example.test')
         self.other_parent = Guardian.objects.create(beneficiary=self.jiro, last_name='よそ', first_name='父', relation='father', email='yoso@example.test')
         self.account, _ = accounts.link_guardian(self.mother_taro, self.staff)
-        accounts.link_guardian(self.mother_hana, self.staff)
+        accounts.link_guardian(self.mother_hana, self.staff, confirm=True)   # きょうだい：確かめたうえで同じアカウントへ（2026-11-22〜）
         accounts.set_password(self.account, GOOD_PW)
         self.other_account, _ = accounts.link_guardian(self.other_parent, self.staff)
         accounts.set_password(self.other_account, GOOD_PW)
