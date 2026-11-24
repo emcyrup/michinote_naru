@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}支援計画シート — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}支援計画シート{% endblock %}
+{% block nav_plans %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .bs-list { list-style: none; margin: 0; padding: 0; background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; overflow: hidden; }
+  .bs-list > li { padding: 10px 14px; border-top: 1px solid #eee9e0; }
+  .bs-list > li:first-child { border-top: 0; }
+  .bs-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bs-name { font-weight: 700; font-size: 1.05rem; margin-right: auto; }
+  .bs-sheets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .bs-sheets a { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid #cfdff4; background: #eef4fc; border-radius: 999px; font-size: .88rem; text-decoration: none; }
+  .bs-none { font-size: .82rem; color: #8a8378; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap">
+  <div class="small text-muted mb-2">2 枚で 1 組（1 枚目：支援計画シート・2 枚目：支援手順書 兼 記録用紙）。欄に単語やメモを書いて「文にする」を押すと、AI が様式に合う文に整えます。見直すときは、前のシートを写して新しく作ります。</div>
+  {% if rows %}
+  <ul class="bs-list">
+    {% for r in rows %}
+    <li>
+      <div class="bs-head">
+        <span class="bs-name">{{ r.child.full_name }} <small class="fw-normal text-muted">さん</small></span>
+        <form method="post" action="{% url 'support_plans:behavior_create' %}">{% csrf_token %}<input type="hidden" name="child" value="{{ r.child.pk }}">
+          <button class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-lg"></i> 作る</button></form>
+      </div>
+      {% if r.sheets %}
+      <div class="bs-sheets">{% for s in r.sheets %}<a href="{% url 'support_plans:behavior_edit' s.pk %}"><i class="bi bi-file-earmark-ruled"></i> {{ s.made_on|date:'Y/n/j' }}{% if s.planner %}・{{ s.planner }}{% endif %}</a>{% endfor %}</div>
+      {% else %}<div class="bs-none">まだありません</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="day-empty">在籍中の利用者がいません。</div>
+  {% endif %}
+  {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_other' %}" class="small"><i class="bi bi-chevron-left"></i> その他へ</a></div>{% endif %}
+</div>
+{% endblock %}

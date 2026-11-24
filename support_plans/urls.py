@@ -1,12 +1,20 @@
 from django.urls import path
 
-from . import views
+from . import behavior_views, views
 
 app_name = 'support_plans'
 
 urlpatterns = [
     path('', views.PlanListView.as_view(), name='list'),
     path('renewal/', views.PlanRenewalView.as_view(), name='renewal'),
+    # 支援計画シート（2 枚で 1 組：支援計画シート・支援手順書 兼 記録用紙）
+    path('behavior/', behavior_views.SheetListView.as_view(), name='behavior_list'),
+    path('behavior/new/', behavior_views.SheetCreateView.as_view(), name='behavior_create'),
+    path('behavior/<int:pk>/', behavior_views.SheetEditView.as_view(), name='behavior_edit'),
+    path('behavior/<int:pk>/copy/', behavior_views.SheetCopyView.as_view(), name='behavior_copy'),
+    path('behavior/<int:pk>/delete/', behavior_views.SheetDeleteView.as_view(), name='behavior_delete'),
+    path('behavior/<int:pk>/print/', behavior_views.SheetPrintView.as_view(), name='behavior_print'),
+    path('behavior/<int:pk>/ai/', behavior_views.SheetAiView.as_view(), name='behavior_ai'),
     path('new/', views.PlanCreateView.as_view(), name='create'),
     path('<int:pk>/', views.PlanDetailView.as_view(), name='detail'),
     path('<int:pk>/print/', views.PlanPrintView.as_view(), name='print'),

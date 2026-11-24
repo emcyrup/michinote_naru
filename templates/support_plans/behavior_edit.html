@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% block title %}支援計画シート {{ b.full_name }}（{{ s.made_on|date:'Y/n/j' }}） — {{ app_label|default:'業務支援' }}{% endblock %}
+{% block page_title %}支援計画シート{% endblock %}
+{% block nav_plans %}active{% endblock %}
+{% block extra_css %}{% include 'includes/day_style.html' %}
+<style>
+  .bs-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .bs-name { font-size: 1.2rem; font-weight: 700; margin-right: auto; }
+  .bs-card { background: #fff; border: 1px solid #e6e1d8; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  .bs-card h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 10px; padding-left: 8px; border-left: 4px solid #4d7ba8; }
+  .bs-card h3 { font-size: .92rem; font-weight: 700; margin: 14px 0 4px; color: #3a352d; }
+  .bs-card h3 small { font-weight: 400; color: #8a8378; }
+  .bs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+  .bs-card label.f { display: block; font-size: .8rem; color: #6b655c; font-weight: 700; margin-bottom: 2px; }
+  .bs-card input[type=text], .bs-card input[type=date], .bs-card textarea { width: 100%; font-size: 1rem; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; }
+  .bs-card textarea { line-height: 1.6; }
+  .bs-ai-row { display: flex; align-items: center; gap: 8px; margin: 4px 0 14px; flex-wrap: wrap; }
+  .bs-ai { border: 1px solid #b9a1e0; background: #f6f1ff; color: #5a3c99; border-radius: 999px; font-size: .82rem; padding: 3px 12px; font-weight: 700; }
+  .bs-ai[disabled] { opacity: .6; }
+  .bs-undo { border: 0; background: none; color: #888; font-size: .78rem; text-decoration: underline; padding: 0; }
+  .bs-ai-msg { font-size: .78rem; color: #a33; }
+  .bs-task { border: 1px solid #eee9e0; border-radius: 10px; padding: 10px; margin-top: 8px; background: #fcfbf9; }
+  .bs-task .no { font-weight: 700; color: #4d7ba8; margin-right: 6px; }
+  .bs-step { border: 1px solid #eee9e0; border-radius: 10px; padding: 10px; margin-top: 8px; background: #fcfbf9; }
+  .bs-step-top { display: grid; grid-template-columns: 7.5em 1fr 5em; gap: 8px; }
+  .bs-add { margin-top: 8px; border: 1px dashed #4d7ba8; background: #f5f9fe; color: #2f5f8f; font-size: .88rem; padding: 6px 12px; border-radius: 8px; font-weight: 700; }
+  .bs-prov { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1.2fr; gap: 6px; margin-bottom: 6px; }
+  .bs-help { font-size: .8rem; color: #6b655c; }
+  .bs-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+  .bs-save .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
+  @media (max-width: 900px) { .bs-save { padding-right: 76px; } }
+  @media (max-width: 560px) { .bs-grid, .bs-prov { grid-template-columns: 1fr 1fr; } .bs-step-top { grid-template-columns: 6.5em 1fr; } .bs-step-top .ck { grid-column: 1 / -1; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="daywrap" style="max-width:900px;">
+  <div class="mb-2"><a href="{% url 'support_plans:behavior_list' %}" class="small"><i class="bi bi-chevron-left"></i> 支援計画シートの一覧へ</a></div>
+  <div class="bs-top">
+    <span class="bs-name">{{ b.full_name }} <small class="fw-normal text-muted">さん</small></span>
+    <a href="{% url 'support_plans:behavior_print' s.pk %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer"></i> 印刷（2 枚）</a>
+    <form method="post" action="{% url 'support_plans:behavior_copy' s.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" data-confirm="このシートを写して、新しいシートを作りますか？（見直しのとき）"><i class="bi bi-files"></i> 写して新しく作る</button></form>
+    <form method="post" action="{% url 'support_plans:behavior_delete' s.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-outline-danger" data-confirm="このシートを消しますか？（元に戻せません）"><i class="bi bi-trash"></i></button></form>
+  </div>
+  {% if ai_ok %}<div class="bs-help mb-2"><i class="bi bi-stars"></i> 欄に単語やメモ（例：「大きな音 苦手 耳ふさぐ 給食の時間 混乱」）を書いて「文にする」を押すと、AI が様式に合う文に整えます。書いていないことは足しません。気に入らなければ「元に戻す」。</div>{% endif %}
+
+  <form method="post" id="bs-form" data-ai-url="{% url 'support_plans:behavior_ai' s.pk %}">
+    {% csrf_token %}
+    <div class="bs-card">
+      <div class="bs-grid">
+        <div><label class="f" for="bs-made">作成日</label><input type="date" id="bs-made" name="made_on" value="{{ s.made_on|date:'Y-m-d' }}" required></div>
+        <div><label class="f" for="bs-planner">支援計画者（作成者）</label><input type="text" id="bs-planner" name="planner" value="{{ s.planner }}" maxlength="60"></div>
+      </div>
+    </div>
+
+    <div class="bs-card">
+      <h2>1 枚目　支援計画シート</h2>
+      {% for key, label, sub, value in page1_fields %}
+      {% if forloop.first %}<h3>インテーク（情報の収集・整理）</h3>{% elif forloop.counter == 2 %}<h3>アセスメント（評価）：理解・解釈・仮説 <small>わかったこと、推測したこと</small></h3>{% endif %}
+      <label class="f" for="f-{{ key }}">{{ label }} <span class="fw-normal">（{{ sub }}）</span></label>
+      <textarea id="f-{{ key }}" name="{{ key }}" rows="{% if key == 'intake' %}8{% else %}5{% endif %}" data-ai="{{ key }}" data-label="{{ label }}">{{ value }}</textarea>
+      {% endfor %}
+
+      <h3>プランニング（支援計画）：支援課題と対応・方針</h3>
+      <div id="bs-tasks">
+        {% for t in tasks %}
+        <div class="bs-task"{% if not t.shown %} hidden{% endif %}>
+          <label class="f" for="f-task_title_{{ forloop.counter0 }}"><span class="no">{{ forloop.counter }}</span>支援課題 <span class="fw-normal">（支援の必要なこと）</span></label>
+          <input type="text" id="f-task_title_{{ forloop.counter0 }}" name="task_title_{{ forloop.counter0 }}" value="{{ t.title }}" maxlength="200" data-ai="task_title_{{ forloop.counter0 }}" data-label="支援課題{{ forloop.counter }}">
+          <label class="f mt-2" for="f-task_policy_{{ forloop.counter0 }}">対応・方針 <span class="fw-normal">（やろうと思うこと）</span></label>
+          <textarea id="f-task_policy_{{ forloop.counter0 }}" name="task_policy_{{ forloop.counter0 }}" rows="4" data-ai="task_policy_{{ forloop.counter0 }}" data-label="支援課題{{ forloop.counter }}の対応・方針">{{ t.policy }}</textarea>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="bs-add" data-add="#bs-tasks">＋ 支援課題を増やす</button>
+    </div>
+
+    <div class="bs-card">
+      <h2>2 枚目　支援手順書 兼 記録用紙</h2>
+      <div class="bs-grid">
+        <div><label class="f" for="bs-sdate">サービス提供日</label><input type="date" id="bs-sdate" name="service_date" value="{{ s.service_date|date:'Y-m-d' }}"></div>
+        <div><label class="f">作成者名</label><div class="bs-help" style="padding-top:8px;">上の「支援計画者（作成者）」を使います</div></div>
+      </div>
+      <h3>事業所 <small>（3 つまで）</small></h3>
+      <div class="bs-prov bs-help"><span>事業所名</span><span>サービス名</span><span>時間</span><span>提供者名</span></div>
+      {% for p in providers %}
+      <div class="bs-prov">
+        <input type="text" name="prov_office_{{ forloop.counter0 }}" value="{{ p.office }}" maxlength="80" aria-label="事業所名{{ forloop.counter }}" placeholder="事業所名{{ forloop.counter }}">
+        <input type="text" name="prov_service_{{ forloop.counter0 }}" value="{{ p.service }}" maxlength="60" aria-label="サービス名{{ forloop.counter }}">
+        <input type="text" name="prov_time_{{ forloop.counter0 }}" value="{{ p.time }}" maxlength="30" aria-label="時間{{ forloop.counter }}" placeholder="例：14:00-17:30">
+        <input type="text" name="prov_staff_{{ forloop.counter0 }}" value="{{ p.staff }}" maxlength="60" aria-label="提供者名{{ forloop.counter }}">
+      </div>
+      {% endfor %}
+
+      <h3>時間ごとの活動とサービス手順</h3>
+      <div id="bs-steps">
+        {% for st in steps %}
+        <div class="bs-step"{% if not st.shown %} hidden{% endif %}>
+          <div class="bs-step-top">
+            <div><label class="f" for="f-step_time_{{ forloop.counter0 }}">時間</label><input type="text" id="f-step_time_{{ forloop.counter0 }}" name="step_time_{{ forloop.counter0 }}" value="{{ st.time }}" maxlength="30" placeholder="14:00-14:30"></div>
+            <div><label class="f" for="f-step_activity_{{ forloop.counter0 }}">活動</label><input type="text" id="f-step_activity_{{ forloop.counter0 }}" name="step_activity_{{ forloop.counter0 }}" value="{{ st.activity }}" maxlength="40" placeholder="来所・おやつ・帰り など"></div>
+            <div class="ck"><label class="f" for="f-step_check_{{ forloop.counter0 }}">チェック</label><input type="text" id="f-step_check_{{ forloop.counter0 }}" name="step_check_{{ forloop.counter0 }}" value="{{ st.check }}" maxlength="20"></div>
+          </div>
+          <label class="f mt-2" for="f-step_procedure_{{ forloop.counter0 }}">サービス手順</label>
+          <textarea id="f-step_procedure_{{ forloop.counter0 }}" name="step_procedure_{{ forloop.counter0 }}" rows="3" data-ai="step_procedure_{{ forloop.counter0 }}" data-label="手順{{ forloop.counter }}" placeholder="例：静養室 スケジュール 着替え アラーム9:50 作業室">{{ st.procedure }}</textarea>
+          <label class="f mt-2" for="f-step_note_{{ forloop.counter0 }}">様子</label>
+          <textarea id="f-step_note_{{ forloop.counter0 }}" name="step_note_{{ forloop.counter0 }}" rows="2" data-ai="step_note_{{ forloop.counter0 }}" data-label="様子{{ forloop.counter }}">{{ st.note }}</textarea>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="bs-add" data-add="#bs-steps">＋ 時間の行を増やす</button>
+
+      <h3>連絡事項</h3>
+      <textarea name="contact_note" id="f-contact_note" rows="4" data-ai="contact_note" data-label="連絡事項">{{ s.contact_note }}</textarea>
+      <h3>問い合わせ事項</h3>
+      <textarea name="inquiry_note" id="f-inquiry_note" rows="3" data-ai="inquiry_note" data-label="問い合わせ事項">{{ s.inquiry_note }}</textarea>
+    </div>
+
+    <div class="bs-save">
+      <button type="submit" class="btn btn-primary">保存する</button>
+      <button type="submit" name="then" value="print" class="btn btn-outline-primary"><i class="bi bi-printer me-1"></i>保存して印刷</button>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('bs-form'), dirty = false;
+  var aiOn = {{ ai_ok|yesno:'true,false' }};
+  form.addEventListener('input', function () { dirty = true; });
+  form.addEventListener('submit', function () { dirty = false; });
+  window.addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+  document.querySelectorAll('[data-confirm]').forEach(function (b) {
+    b.addEventListener('click', function (e) { if (!confirm(b.dataset.confirm)) e.preventDefault(); else dirty = false; });
+  });
+  // 「増やす」：隠してある次の行を出す
+  document.querySelectorAll('[data-add]').forEach(function (btn) {
+    function left() { return document.querySelectorAll(btn.dataset.add + ' > [hidden]').length; }
+    if (!left()) btn.hidden = true;
+    btn.addEventListener('click', function () {
+      var next = document.querySelector(btn.dataset.add + ' > [hidden]');
+      if (!next) return;
+      next.hidden = false;
+      var f = next.querySelector('input, textarea'); if (f) f.focus();
+      if (!left()) btn.hidden = true;
+    });
+  });
+  if (!aiOn) return;
+  // 前提：1 枚目の欄と支援課題（いまの欄は除く）
+  function context(except) {
+    var out = {};
+    form.querySelectorAll('[data-ai]').forEach(function (el) {
+      if (el === except || !el.value.trim()) return;
+      var k = el.dataset.ai;
+      if (/^(intake|bio|psycho|social|task_title_)/.test(k)) out[el.dataset.label] = el.value.trim();
+    });
+    return out;
+  }
+  // 欄ごとに「文にする」
+  form.querySelectorAll('[data-ai]').forEach(function (el) {
+    var row = document.createElement('div'); row.className = 'bs-ai-row';
+    row.innerHTML = '<button type="button" class="bs-ai"><i class="bi bi-stars"></i> 文にする</button><button type="button" class="bs-undo" hidden>元に戻す</button><span class="bs-ai-msg"></span>';
+    el.insertAdjacentElement('afterend', row);
+    var go = row.querySelector('.bs-ai'), undo = row.querySelector('.bs-undo'), msg = row.querySelector('.bs-ai-msg'), before = '';
+    undo.addEventListener('click', function () { el.value = before; undo.hidden = true; dirty = true; });
+    go.addEventListener('click', function () {
+      var memo = el.value.trim();
+      msg.textContent = '';
+      if (!memo) { msg.textContent = '先に、単語やメモを書いてください。'; el.focus(); return; }
+      go.disabled = true; go.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 作っています…';
+      fetch(form.dataset.aiUrl, {method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': form.csrfmiddlewaretoken.value},
+        body: JSON.stringify({field: el.dataset.ai, memo: memo, context: context(el)})})
+        .then(function (r) { return r.json().catch(function () { return {error: '応答を読めませんでした。'}; }); })
+        .then(function (d) {
+          if (d.result) { before = el.value; el.value = d.result; undo.hidden = false; dirty = true; }
+          else { msg.textContent = d.error || 'うまく作れませんでした。'; }
+        })
+        .catch(function () { msg.textContent = 'つながりませんでした。もう一度お試しください。'; })
+        .finally(function () { go.disabled = false; go.innerHTML = '<i class="bi bi-stars"></i> 文にする'; });
+    });
+  });
+})();
+</script>
+{% endblock %}

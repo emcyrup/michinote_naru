@@ -241,7 +241,8 @@ class StaffTests(Base):
         html = self.client.get(other).content.decode()
         for label in ('送迎記録', '研修', '支援計画シート'):
             self.assertIn(f'<span class="ih-label">{label}</span>', html)
-        self.assertEqual(html.count('class="ih-soon"'), 3)            # 送迎を使わない設定なら、送迎記録も準備中
+        self.assertEqual(html.count('class="ih-soon"'), 2)            # 送迎を使わない設定なら、送迎記録も準備中（支援計画シートは開ける）
+        self.assertIn(f'href="{reverse("support_plans:behavior_list")}"', html)
         page = self.client.get(reverse('facilities:soon', args=['kenshu'])).content.decode()
         self.assertIn('「研修」の画面は準備中です', page)
         self.assertIn(f'href="{other}"', page)                        # 準備中の案内からは「その他」へ戻る
@@ -250,7 +251,7 @@ class StaffTests(Base):
         self.f.save()
         html = self.client.get(other).content.decode()
         self.assertIn(f'href="{reverse("transport:day")}"', html)
-        self.assertEqual(html.count('class="ih-soon"'), 2)
+        self.assertEqual(html.count('class="ih-soon"'), 1)
         # 保護者ページには「その他」を出さない
         self.client.logout()
         self.enter()
