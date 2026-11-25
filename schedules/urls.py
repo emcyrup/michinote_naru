@@ -8,6 +8,8 @@ urlpatterns = [
     path('jisseki/', views.JissekiDayView.as_view(), name='jisseki'),
     path('jisseki/<int:beneficiary_pk>/', views.JissekiMonthView.as_view(), name='jisseki_child'),
     path('jisseki/<int:beneficiary_pk>/<int:year>/<int:month>/', views.JissekiMonthView.as_view(), name='jisseki_month'),
+    path('jisseki/print/<int:year>/<int:month>/', views.JissekiPrintView.as_view(), name='jisseki_print_all'),
+    path('jisseki/<int:beneficiary_pk>/<int:year>/<int:month>/print/', views.JissekiPrintView.as_view(), name='jisseki_print'),
 
     # 月表示カレンダー（当月 / 指定月）
     path('',

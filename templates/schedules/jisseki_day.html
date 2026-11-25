@@ -109,6 +109,7 @@
   </ul>
   {% endif %}
 
+  <div class="text-center mt-3"><a href="{% url 'schedules:jisseki_print_all' day.year day.month %}?back={{ day|date:'Y-m-d' }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-printer"></i> {{ day.month }}月の実績記録票を全員分印刷（様式５）</a></div>
   {% if features.home_icons %}<div class="text-center mt-3"><a href="{% url 'facilities:home_icons' %}" class="small"><i class="bi bi-chevron-left"></i> ホームへ</a></div>{% endif %}
 </div>
 {% endblock %}
