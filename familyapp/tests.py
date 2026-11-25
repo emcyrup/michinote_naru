@@ -1,5 +1,6 @@
 """保護者アプリ（familyapp。config/urls_family.py で動かす）の画面。データはすべて架空"""
 import datetime
+from unittest import mock
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -331,6 +332,14 @@ class ScreenTests(FamilyAppTestCase):
         self.assertNotContains(r, '利用の予定はありません')
 
     def test_home_icon_order_and_due_flag(self):
+        # 「利用日申請をしてください」は毎月 25 日から（2026-11-25 成の要望）
+        with mock.patch('django.utils.timezone.localdate', return_value=self.today.replace(day=24)):
+            self.assertIsNone(views.request_due(self.f, self.taro))
+            self.assertNotContains(self.client.get(reverse('familyapp:home')), '未申請')
+        with mock.patch('django.utils.timezone.localdate', return_value=self.today.replace(day=25)):
+            self._due_flag_from_25th()
+
+    def _due_flag_from_25th(self):
         r = self.client.get(reverse('familyapp:home'))
         html = r.content.decode()
         order = ['保護者より', '見本の事業所より', 'お知らせ', '欠席連絡', 'その他の連絡', '利用日申請', '実績記録票', '個別支援計画']

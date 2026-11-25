@@ -51,13 +51,21 @@ def request_window():
     return max(first, _first_of_next_month(today)), last
 
 
+# 「利用日申請をしてください」の印を出しはじめる日（毎月この日から月末まで。2026-11-25 成の要望）
+REQUEST_NOTICE_FROM_DAY = 25
+
+
 def request_due(facility, child):
     """
     来月分の利用日申請がまだなら、その月の 1 日（datetime.date）。済んでいれば None。
-    「まだ」＝来月の利用の予定（欠席を含む）が 1 日も無い。職員が代理で入れたものも「済み」に数える
+    「まだ」＝来月の利用の予定（欠席を含む）が 1 日も無い。職員が代理で入れたものも「済み」に数える。
+    印を出すのは毎月 25 日から（それより前は、まだなら None）
     """
     from schedules.models import ScheduledVisit
-    first = _first_of_next_month(timezone.localdate())
+    today = timezone.localdate()
+    if today.day < REQUEST_NOTICE_FROM_DAY:
+        return None
+    first = _first_of_next_month(today)
     last = _first_of_next_month(first) - datetime.timedelta(days=1)
     if ScheduledVisit.objects.filter(facility=facility, beneficiary=child, date__range=(first, last)).exists():
         return None
