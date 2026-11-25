@@ -277,6 +277,50 @@ class ScreenTests(FamilyAppTestCase):
         self.assertEqual((req.beneficiary, req.account), (self.taro, self.account))
         self.assertContains(self.client.get(f'{url}?ym={ym}&done=1'), '利用日を申請しました')
 
+    # ---- 利用日申請：利用曜日の選び漏れ（2026-11-25 成の要望）
+    def test_regular_weekday_days_must_be_decided(self):
+        url = reverse('familyapp:calendar')
+        first = views.request_window()[0]
+        ym = f'{first.year}-{first.month:02d}'
+        last = (first + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)
+        tuesdays = [first + datetime.timedelta(days=n) for n in range((last - first).days + 1)
+                    if (first + datetime.timedelta(days=n)).weekday() == 1]
+        # 曜日を決めていない子には聞かない（これまでどおり）
+        r = self.client.post(url, {'ym': ym, 'dates': [tuesdays[0].isoformat()]})
+        self.assertIn('done=1', r['Location'])
+        ScheduledVisit.objects.all().delete()
+        UseRequest.objects.all().delete()
+        # 火曜の子：選んでいない火曜を、日ごとに「都合欠／利用」で決めるまで送れない
+        self.taro.weekday_tue = True
+        self.taro.save()
+        r = self.client.post(url, {'ym': ym, 'dates': [tuesdays[0].isoformat()]})
+        self.assertEqual(r.status_code, 200)
+        html = r.content.decode()
+        rest = tuesdays[1:]
+        names = '、'.join(f'{d.day}日(火)' for d in rest)
+        self.assertIn(f'{names}が選択されていません。チェックを入れて送信ボタンを押してください。', html)
+        for d in rest:
+            self.assertIn(f'name="choice_{d.isoformat()}" value="off"', html)
+        self.assertFalse(ScheduledVisit.objects.exists())                                 # まだ何も入れない
+        data = {'ym': ym, 'step': 'confirm', 'dates': [tuesdays[0].isoformat()], f'choice_{rest[0].isoformat()}': 'off'}
+        r = self.client.post(url, data)                                                     # 1 日でも選んでいなければ送れない
+        self.assertEqual(r.status_code, 400)
+        self.assertContains(r, 'まだ選んでいない日があります', status_code=400)
+        for d in rest[1:]:
+            data[f'choice_{d.isoformat()}'] = 'use'
+        r = self.client.post(url, data)
+        self.assertIn('done=1', r['Location'])
+        self.assertEqual(sorted(ScheduledVisit.objects.filter(beneficiary=self.taro).values_list('date', flat=True)),
+                         [tuesdays[0]] + rest[1:])
+        off = FamilyMessage.objects.get(beneficiary=self.taro)
+        self.assertEqual((off.target_date, off.reason), (rest[0], FamilyMessage.REASON_PERSONAL))
+        page = self.client.get(f'{url}?ym={ym}&done=1').content.decode()
+        self.assertIn(f'都合欠で連絡しました：{rest[0].day}日(火)', page)
+        self.assertIn('<span class="cal-mark is-pers">都合欠</span>', page)
+        self.assertContains(self.client.get(reverse('familyapp:calendar_day', args=[rest[0].isoformat()])), 'で連絡ずみです')
+        # もう決めたので、次からは聞かない
+        self.assertEqual(yotei.missing_regular_days(self.f, self.taro, first, last), [])
+
     # ---- 利用日申請：締め切り・1 日ずつの申請・未申請の印（2026-11-24 成の要望）
     def test_request_window_starts_next_month(self):
         first, last = views.request_window()

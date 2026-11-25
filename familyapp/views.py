@@ -402,7 +402,7 @@ class CalendarDayView(FamilyView):
         window = request_window()
         open_ = window[0] <= day <= window[1]
         closed = bool(info['event'] and info['event'].is_closed)
-        free = not info['use'] and not info['absent']
+        free = not info['use'] and not info['absent'] and not info.get('off')
         flash = request.session.pop(self.FLASH, None) if request.GET.get('done') == '1' else None
         return self.page('familyapp/calendar_day.html', **info, ym=f'{day.year}-{day.month:02d}', flash=flash,
                          can_apply=open_ and free and not closed,
