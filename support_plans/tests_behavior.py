@@ -59,8 +59,8 @@ class BehaviorSheetTests(TestCase):
         self.assertEqual([s['activity'] for s in sheet.steps], ['来所', '帰り'])
         self.assertEqual(sheet.service_date, date(2026, 11, 25))
         pr = self.client.get(reverse('support_plans:behavior_print', args=[sheet.pk])).content.decode()
-        for text in ('支援計画シート　氏名（架空 一郎）　支援計画者（見本 職員）', '①　見通しを持って過ごす', '②　クールダウンの場所',
-                     '・写真カードで予定を伝える', '支援手順書 兼 記録用紙', '2026年11月25日', '玄関→静養室（着替え）',
+        for text in ('氏　名　（　架空 一郎　）', '支援計画者（　見本 職員　）', '支援計画シート（様式）', '令和　8　年　11　月　24　日', '支援手順書　兼　記録用紙（様式）', '①　見通しを持って過ごす', '②　クールダウンの場所',
+                     '・写真カードで予定を伝える', '2026年11月25日', '玄関→静養室（着替え）',
                      '事業所名①', '14:00-17:30', '・活動の切り替えは静養室で'):
             self.assertIn(text, pr)
         # 読めない日付は保存しない
