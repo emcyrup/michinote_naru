@@ -121,7 +121,7 @@ def save_from_post(sheet, data, staff):
                        for i in range(PROVIDER_ROWS)]
     sheet.steps = [s for s in (
         {'time': _s(data.get(f'step_time_{i}'), 30), 'activity': _s(data.get(f'step_activity_{i}'), 40),
-         'procedure': _s(data.get(f'step_procedure_{i}'), CELL_MAX), 'check': _s(data.get(f'step_check_{i}'), 20),
+         'procedure': _s(data.get(f'step_procedure_{i}'), CELL_MAX), 'check': '1' if data.get(f'step_check_{i}') else '',
          'note': _s(data.get(f'step_note_{i}'), CELL_MAX)}
         for i in range(STEP_MAX)) if any(s.values())]
     sheet.contact_note = _s(data.get('contact_note'), TEXT_MAX)

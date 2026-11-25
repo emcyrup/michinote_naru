@@ -13,6 +13,25 @@
   .bk-state { font-size: .82rem; padding: 2px 10px; border-radius: 999px; background: #f1eee8; color: #555; }
   .bk-state.ok { background: #e3f3e6; color: #1e6b33; }
   .bk-state.draft { background: #fff3d6; color: #8a5a00; }
+  .bk-from-date { font-size: .78rem; font-weight: 700; color: #23508f; }
+  .bk-modes { display: grid; gap: 6px; margin-bottom: 10px; }
+  .bk-modes label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #d8d2c6; border-radius: 12px; background: #fff; cursor: pointer; font-weight: 700; margin: 0; }
+  .bk-modes input { width: 20px; height: 20px; flex: 0 0 auto; }
+  .bk-modes label:has(input:checked) { background: #eef4fc; border-color: #4d7ba8; }
+  .bk-modes .ai { font-size: .72rem; padding: 1px 8px; border-radius: 999px; background: #f6f1ff; color: #5a3c99; border: 1px solid #b9a1e0; }
+  .bk-modes small { display: block; font-weight: 400; color: #8a8378; font-size: .78rem; }
+  .bk-panel { border: 1px dashed #b9a1e0; background: #fcfaff; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .bk-panel label.f { display: block; font-size: .82rem; font-weight: 700; color: #6b655c; margin-bottom: 4px; }
+  .bk-ai-go { border: 1px solid #8a6cc4; background: #6f4fb0; color: #fff; border-radius: 999px; padding: 8px 18px; font-weight: 700; }
+  .bk-ai-go.sub { background: #f6f1ff; color: #5a3c99; }
+  .bk-ai-go[disabled] { opacity: .6; }
+  .bk-ai-msg { font-size: .82rem; color: #a33; margin-top: 6px; }
+  .bk-vp { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #eee9e0; }
+  .bk-vp:first-child { border-top: 0; }
+  .bk-vp .t { flex: 1 1 auto; }
+  .bk-vp button { border: 1px solid #cfc8bb; background: #fff; border-radius: 999px; padding: 4px 14px; font-weight: 700; }
+  .bk-vp button.on-yes { background: #e3f3e6; border-color: #1e6b33; color: #1e6b33; }
+  .bk-vp button.on-no { background: #fde8e6; border-color: #b3261e; color: #b3261e; }
 </style>
 {% endblock %}
 {% block content %}
@@ -28,17 +47,49 @@
     {% elif book and book.body %}<span class="bk-state draft"><i class="bi bi-pencil-fill"></i> 下書き</span>{% endif %}
   </div>
 
-  <div class="daylist-head">保護者より（{{ day|date:'n月j日' }}）</div>
+  <div class="daylist-head">保護者より（{{ day|date:'n月j日' }}{% if older_notes %}・まだ連絡帳を返していない分も{% endif %}）</div>
   {% for n in notes %}
   <div class="bk-from"><div class="bk-text">{{ n.body }}</div><div class="bk-meta mt-1">{{ n.created_at|date:'n/j H:i' }} {{ n.sender_name }}</div></div>
   {% empty %}
-  <div class="bk-meta ms-1">この日の保護者からの連絡帳はありません。</div>
+  {% if not older_notes %}<div class="bk-meta ms-1">この日の保護者からの連絡帳はありません。</div>{% endif %}
+  {% endfor %}
+  {% for n in older_notes %}
+  <div class="bk-from"><div class="bk-from-date">{{ n.date|date:'n月j日' }} の分（まだ連絡帳を返していません）</div><div class="bk-text">{{ n.body }}</div><div class="bk-meta mt-1">{{ n.created_at|date:'n/j H:i' }} {{ n.sender_name }}</div></div>
   {% endfor %}
 
   <div class="daylist-head">{{ request.user.facility.name }} より（保護者に送る文）</div>
   {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
-  <form method="post" class="bk-card" id="bk-form">
+  <form method="post" class="bk-card" id="bk-form" data-ai-url="{% url 'family:staff_book_ai' b.pk %}" data-start="{% if draft or book.body %}free{% endif %}">
     {% csrf_token %}<input type="hidden" name="date" value="{{ day|date:'Y-m-d' }}">
+    <div class="bk-modes" role="radiogroup" aria-label="書き方">
+      {% if ai_ok %}
+      <label><input type="radio" name="mode" value="memo" form="bk-none"> <span>メモ書きから文章作成 <span class="ai">AI</span><small>単語やメモを書くと、AI が保護者に送る文にします</small></span></label>
+      <label><input type="radio" name="mode" value="eval" form="bk-none"> <span>評価して文章作成 <span class="ai">AI</span><small>活動を入れて、AI が出した観点に「はい／いいえ」を付けると、文にします</small></span></label>
+      {% endif %}
+      <label><input type="radio" name="mode" value="free" form="bk-none"> <span>文章作成<small>自由に書きます</small></span></label>
+    </div>
+    {% if ai_ok %}
+    <div class="bk-panel" data-panel="memo" hidden>
+      <label class="f" for="bk-memo">メモ（単語でよい）</label>
+      <textarea id="bk-memo" class="form-control" rows="3" maxlength="1000" placeholder="例：公園 すべり台 何回も 笑顔 おやつ完食" form="bk-none"></textarea>
+      <div class="mt-2"><button type="button" class="bk-ai-go" data-go="memo"><i class="bi bi-stars"></i> AI で文にする</button></div>
+      <div class="bk-ai-msg" data-msg="memo"></div>
+    </div>
+    <div class="bk-panel" data-panel="eval" hidden>
+      <label class="f" for="bk-activity">活動</label>
+      <div class="d-flex gap-2"><input type="text" id="bk-activity" class="form-control" maxlength="100" placeholder="例：公園で散歩・クッキー作り" form="bk-none">
+        <button type="button" class="bk-ai-go sub flex-shrink-0" data-go="points"><i class="bi bi-stars"></i> 観点を出す</button></div>
+      <div id="bk-points" class="mt-2"></div>
+      <div id="bk-eval-more" hidden>
+        <label class="f mt-2" for="bk-eval-memo">ほかに伝えたいこと（あれば）</label>
+        <textarea id="bk-eval-memo" class="form-control" rows="2" maxlength="1000" placeholder="例：おやつ完食" form="bk-none"></textarea>
+        <div class="mt-2"><button type="button" class="bk-ai-go" data-go="eval"><i class="bi bi-stars"></i> AI で文にする</button></div>
+      </div>
+      <div class="bk-ai-msg" data-msg="eval"></div>
+    </div>
+    {% endif %}
+    <div id="bk-body-wrap" hidden>
+    <label class="f small fw-bold text-muted mb-1" for="bk-body" id="bk-body-label">保護者に送る文</label>
     <textarea name="body" id="bk-body" class="form-control" rows="8" maxlength="{{ body_max }}" style="font-size:1rem;"
               placeholder="例：今日は公園へ出かけました。すべり台を何度も楽しんでいました。おやつも完食です。">{% if draft %}{{ draft }}{% elif book %}{{ book.body }}{% endif %}</textarea>
     {% if journal_text %}
@@ -51,10 +102,73 @@
       <button type="submit" name="action" value="send" class="btn btn-primary px-4" id="bk-send"><i class="bi bi-send me-1"></i>{% if book and book.is_sent %}送り直す{% else %}送信{% endif %}</button>
     </div>
     {% if book and book.is_sent %}<div class="bk-meta mt-2 text-end">送り直すと、保護者ページの文が差し替わり、保護者の確認は付け直しになります（LINE でもう一度知らせます）。</div>{% endif %}
+    </div>
   </form>
 </div>
 <script>
 (function () {
+  // 書き方（メモから AI／評価して AI／自由に）。選び直しても、できた文は残す
+  var form = document.getElementById('bk-form'), wrap = document.getElementById('bk-body-wrap');
+  var label = document.getElementById('bk-body-label'), points = [];
+  function showMode(mode) {
+    form.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.dataset.panel !== mode; });
+    var bodyEl = document.getElementById('bk-body');
+    wrap.hidden = !(mode === 'free' || bodyEl.value.trim());
+    label.textContent = mode === 'free' ? '保護者に送る文（自由に書けます）' : '保護者に送る文（AI が作った文。送る前に直せます）';
+  }
+  form.querySelectorAll('input[name=mode]').forEach(function (r) {
+    r.addEventListener('change', function () { if (r.checked) showMode(r.value); });
+  });
+  if (form.dataset.start) { var st = form.querySelector('input[name=mode][value=' + form.dataset.start + ']'); if (st) { st.checked = true; showMode('free'); } }
+  function msg(kind, text) { var m = form.querySelector('[data-msg=' + kind + ']'); if (m) m.textContent = text || ''; }
+  function ask(payload, btn, kind, done) {
+    var keep = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 作っています…'; msg(kind, '');
+    fetch(form.dataset.aiUrl + '?date=' + encodeURIComponent(form.date.value), {method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': form.csrfmiddlewaretoken.value}, body: JSON.stringify(payload)})
+      .then(function (r) { return r.json().catch(function () { return {error: '応答を読めませんでした。'}; }); })
+      .then(function (d) { if (d.error) msg(kind, d.error); else done(d); })
+      .catch(function () { msg(kind, 'つながりませんでした。もう一度お試しください。'); })
+      .finally(function () { btn.disabled = false; btn.innerHTML = keep; });
+  }
+  function putResult(text) {
+    var bodyEl = document.getElementById('bk-body');
+    if (bodyEl.value.trim() && bodyEl.value.trim() !== text && !confirm('いま書いてある文を、AI が作った文に置きかえますか？')) return;
+    bodyEl.value = text; wrap.hidden = false; bodyEl.dispatchEvent(new Event('input'));
+    bodyEl.scrollIntoView({behavior: 'smooth', block: 'center'});
+  }
+  function drawPoints() {
+    var box = document.getElementById('bk-points'); box.innerHTML = '';
+    points.forEach(function (p, i) {
+      var row = document.createElement('div'); row.className = 'bk-vp';
+      var t = document.createElement('span'); t.className = 't'; t.textContent = p.text; row.appendChild(t);
+      [['yes', 'はい'], ['no', 'いいえ']].forEach(function (a) {
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = a[1];
+        if (p.answer === a[0]) b.className = 'on-' + a[0];
+        b.addEventListener('click', function () { p.answer = p.answer === a[0] ? null : a[0]; drawPoints(); });
+        row.appendChild(b);
+      });
+      box.appendChild(row);
+    });
+    document.getElementById('bk-eval-more').hidden = !points.length;
+  }
+  form.querySelectorAll('[data-go]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var go = btn.dataset.go;
+      if (go === 'memo') {
+        var memo = document.getElementById('bk-memo').value.trim();
+        if (!memo) { msg('memo', 'メモを書いてから押してください。'); return; }
+        ask({action: 'write', memo: memo}, btn, 'memo', function (d) { putResult(d.result); });
+      } else if (go === 'points') {
+        var act = document.getElementById('bk-activity').value.trim();
+        if (!act) { msg('eval', '活動を入れてから押してください。'); return; }
+        ask({action: 'viewpoints', activity: act}, btn, 'eval', function (d) { points = d.viewpoints || []; drawPoints(); });
+      } else if (go === 'eval') {
+        if (!points.some(function (p) { return p.answer; })) { msg('eval', '観点に「はい」か「いいえ」を付けてから押してください。'); return; }
+        ask({action: 'write', activity: document.getElementById('bk-activity').value.trim(), viewpoints: points,
+             memo: document.getElementById('bk-eval-memo').value.trim()}, btn, 'eval', function (d) { putResult(d.result); });
+      }
+    });
+  });
   var copy = document.getElementById('bk-copy'), body = document.getElementById('bk-body');
   if (copy) copy.addEventListener('click', function () {
     var text = document.getElementById('bk-journal').content.textContent;
