@@ -17,7 +17,7 @@ from config.jp_holidays import holiday_name
 from schedules.daylist import WEEK_JP
 from schedules.models import ScheduledVisit
 
-from .models import DayEvent, UseRequest
+from .models import DayEvent, FamilyMessage, UseRequest
 
 # 保護者が申請できる範囲（あしたから。きょうの分は電話などで）
 REQUEST_AHEAD_DAYS = 92
@@ -124,8 +124,13 @@ def month_view(facility, year, month, child=None, window=None):
     events = events_between(facility, first, last, child)
     visits = ScheduledVisit.objects.filter(facility=facility, date__range=(first, last))
     mine, counts = {}, {}
+    off = {}
     if child is not None:
         mine = {v.date: v for v in visits.filter(beneficiary=child)}
+        # 予定は無いが、欠席の連絡がある日（利用日申請で「都合欠」を選んだ日など）
+        for d, reason in FamilyMessage.objects.filter(facility=facility, beneficiary=child, kind=FamilyMessage.KIND_ABSENCE,
+                                                      target_date__range=(first, last)).values_list('target_date', 'reason'):
+            off[d] = '都合欠' if reason == FamilyMessage.REASON_PERSONAL else '欠席'
     else:
         for d in visits.exclude(status=ScheduledVisit.STATUS_ABSENT).values_list('date', flat=True):
             counts[d] = counts.get(d, 0) + 1
@@ -147,8 +152,10 @@ def month_view(facility, year, month, child=None, window=None):
                 'has_detail': bool(ev and ev.detail.strip()), 'count': counts.get(d, 0), 'events': ev.events if ev else [],
                 'use': bool(v and v.status != ScheduledVisit.STATUS_ABSENT),
                 'absent': bool(v and v.status == ScheduledVisit.STATUS_ABSENT),
+                'off': off.get(d, '') if v is None else '',
             }
-            cell['can_pick'] = bool(window and window[0] <= d <= window[1] and not cell['is_closed'] and v is None)
+            cell['can_pick'] = bool(window and window[0] <= d <= window[1] and not cell['is_closed'] and v is None
+                                    and not cell['off'])
             row.append(cell)
             if ev and (ev.label or cell['has_detail']):
                 agenda.append(cell)
@@ -200,6 +207,47 @@ def apply_days(facility, child, days, *, via, line_user_id='', sender_name='', s
             seen_by=staff if via == UseRequest.VIA_STAFF else None)
         made.append(d)
     return made, skipped
+
+
+# ---------------------------------------------------------------- 曜日で決めた利用日の選び漏れ（2026-11-25 成の要望）
+# 児童台帳の「利用曜日」（Beneficiary.weekday_mon〜weekday_sat）がある子は、申請するときに、その曜日の日を
+# 選んでいなければ「利用」か「都合欠」かを必ず選んでもらう（選び漏れと休みの希望を分ける）。曜日が無い子には出さない。
+WEEKDAY_FIELDS = ['weekday_mon', 'weekday_tue', 'weekday_wed', 'weekday_thu', 'weekday_fri', 'weekday_sat']
+PERSONAL_OFF_BODY = '利用日申請で「都合欠」を選びました'
+
+
+def regular_weekdays(child):
+    """利用曜日（月＝0 … 土＝5）。決めていなければ空"""
+    return {i for i, f in enumerate(WEEKDAY_FIELDS) if getattr(child, f, False)}
+
+
+def missing_regular_days(facility, child, first, last, picked=()):
+    """
+    first〜last のうち、利用曜日の日で、まだ何も決まっていない日（古い順）。
+    休業日・もう予定のある日・もう欠席の連絡のある日・picked（いま選んだ日）は除く
+    """
+    weekdays = regular_weekdays(child)
+    if not weekdays or first > last:
+        return []
+    days = [first + datetime.timedelta(days=n) for n in range((last - first).days + 1)]
+    days = [d for d in days if d.weekday() in weekdays and d not in set(picked)]
+    if not days:
+        return []
+    closed = set(DayEvent.objects.filter(facility=facility, date__in=days, is_closed=True).values_list('date', flat=True))
+    have = set(ScheduledVisit.objects.filter(beneficiary=child, date__in=days).values_list('date', flat=True))
+    have |= set(FamilyMessage.objects.filter(facility=facility, beneficiary=child, kind=FamilyMessage.KIND_ABSENCE,
+                                             target_date__in=days).values_list('target_date', flat=True))
+    return [d for d in days if d not in closed and d not in have]
+
+
+def apply_personal_off(facility, child, guardian, days):
+    """
+    利用日申請で「都合欠」を選んだ日：欠席連絡（都合欠）として残す。職員の「保護者からの連絡」のその日に出て、
+    保護者のカレンダーには「都合欠」の印が出る（来所予定は作らない）。(作った連絡, もうあって作らなかった日) を返す
+    """
+    from .services import create_messages
+    return create_messages(facility, child, guardian, FamilyMessage.KIND_ABSENCE, days,
+                           reason=FamilyMessage.REASON_PERSONAL, body=PERSONAL_OFF_BODY)
 
 
 def unseen_requests(facility):
@@ -285,4 +333,8 @@ def day_info(facility, day, child=None):
         v = ScheduledVisit.objects.filter(facility=facility, beneficiary=child, date=day).first()
         info['use'] = bool(v and v.status != ScheduledVisit.STATUS_ABSENT)
         info['absent'] = bool(v and v.status == ScheduledVisit.STATUS_ABSENT)
+        # 予定は無いが欠席の連絡がある日（利用日申請で「都合欠」を選んだ日など）：'都合欠' か '欠席'
+        reason = None if v else FamilyMessage.objects.filter(
+            facility=facility, beneficiary=child, kind=FamilyMessage.KIND_ABSENCE, target_date=day).values_list('reason', flat=True).first()
+        info['off'] = '' if reason is None else ('都合欠' if reason == FamilyMessage.REASON_PERSONAL else '欠席')
     return info
