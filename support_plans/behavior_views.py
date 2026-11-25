@@ -112,7 +112,8 @@ class SheetPrintView(SheetMixin, View):
         steps = list(sheet.steps or [])
         return render(request, 'support_plans/behavior_print.html', {
             's': sheet, 'b': sheet.beneficiary, 'tasks': sheet.tasks or [], 'providers': providers[:behavior.PROVIDER_ROWS],
-            'steps': steps, 'blank_steps': range(max(0, 8 - len(steps))), 'marks': '①②③④⑤⑥⑦⑧'})
+            'steps': steps, 'blank_steps': range(max(0, 8 - len(steps))), 'marks': '①②③④⑤⑥⑦⑧',
+            'reiwa': sheet.made_on.year - 2018})
 
 
 class SheetAiView(SheetMixin, View):

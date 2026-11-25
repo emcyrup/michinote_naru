@@ -664,14 +664,30 @@ class StaffAbsenceView(LoginRequiredMixin, View):
 class StaffAbsencePrintView(StaffAbsenceView):
     """欠席時の対応の記録を、紙の様式の並びで印刷する（保存ずみのものだけ）"""
 
+    PER_PAGE = 3       # 成の様式：A4 縦に 3 件
+
     def get(self, request, beneficiary_pk):
-        self.setup_objects(request, beneficiary_pk)
-        ctx = self.context()
-        if not ctx['saved']:
-            raise Http404
+        """その子の、その月の記録をまとめて（1 枚に 3 件・日付の順）。その日の記録が無ければ出さない"""
+        import calendar as _cal
+
         from schedules.daylist import WEEK_JP
-        ctx['next_weekday'] = WEEK_JP[ctx['rec'].next_date.weekday()] if ctx['rec'].next_date else ''
-        return render(request, 'family/staff_absence_print.html', ctx)
+
+        from . import absence
+        self.setup_objects(request, beneficiary_pk)
+        if not AbsenceRecord.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).exists():
+            raise Http404
+        first = self.day.replace(day=1)
+        last = self.day.replace(day=_cal.monthrange(self.day.year, self.day.month)[1])
+        recs = list(AbsenceRecord.objects.filter(facility=self.facility, beneficiary=self.child, date__range=(first, last))
+                    .order_by('date', 'pk'))
+        for r in recs:
+            r.weekday = WEEK_JP[r.date.weekday()]
+            r.next_weekday = WEEK_JP[r.next_date.weekday()] if r.next_date else ''
+        pages = [recs[i:i + self.PER_PAGE] for i in range(0, len(recs), self.PER_PAGE)]
+        pages = [{'recs': pg, 'blank': range(self.PER_PAGE - len(pg))} for pg in pages]
+        return render(request, 'family/staff_absence_print.html', {
+            'b': self.child, 'day': self.day, 'pages': pages,
+            'supports': absence.SUPPORTS, 'methods': absence.METHODS, 'reasons': absence.REASONS})
 
     def post(self, request, beneficiary_pk):
         raise Http404

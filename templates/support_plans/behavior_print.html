@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>支援計画シート {{ b.full_name }} {{ s.made_on|date:'Y-m-d' }}</title>
-{# 厚生労働省の例（支援計画シート／支援手順書 兼 記録用紙）の並び。成のいまの様式を受け取ったら合わせ直す #}
+{# 成の様式（支援計画シート（様式）／支援手順書　兼　記録用紙（様式））の並び #}
 <style>
   body { font-family: "BIZ UDPGothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #111; margin: 0; padding: 20px; font-size: 11px; line-height: 1.45; background: #fff; }
   .page { max-width: 760px; margin: 0 auto 28px; }
@@ -12,17 +12,22 @@
   h1 { font-size: 15px; text-align: center; margin: 0 0 8px; letter-spacing: .1em; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   td, th { border: 1px solid #222; padding: 4px 5px; vertical-align: top; }
-  th { background: #e6e6e6; font-weight: 700; text-align: center; vertical-align: middle; }
-  .sub { background: #f2f2f2; text-align: center; font-weight: 700; }
+  th { background: #eeebdf; font-weight: 700; text-align: center; vertical-align: middle; }
+  .sub { background: #eeebdf; text-align: center; font-weight: 700; }
   .pre { white-space: pre-wrap; }
   .c { text-align: center; vertical-align: middle; }
   .cap { border: 1px solid #222; border-bottom: 0; padding: 4px 6px; font-weight: 700; }
   .head td { padding: 5px 6px; }
-  .head .lbl { background: #e6e6e6; font-weight: 700; text-align: center; white-space: nowrap; }
-  .main { height: 232mm; }
+  .head .lbl { background: #eeebdf; font-weight: 700; text-align: center; white-space: nowrap; }
+  .main { height: 222mm; }
+  .foot1 { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: 4px; }
+  .foot1 .m { text-align: center; }
+  .foot1 .r { text-align: right; }
+  .box2 { border: 2px solid #111; }
+  .steps td.dash { border-bottom: 1px dashed #222; border-top: 1px dashed #222; }
   .steps td { height: 54px; }
   .gap { border: 0; width: 2%; }
-  .notes { border: 1.5px solid #222; padding: 6px 8px; margin-top: 10px; min-height: 110px; }
+  .notes { border: 2px solid #111; padding: 6px 8px; margin-top: 10px; min-height: 110px; }
   .notes b { display: block; }
   .toolbar { text-align: right; margin: 0 auto 12px; max-width: 760px; }
   .toolbar a, .toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #4e7d89; background: #4e7d89; color: #fff; cursor: pointer; text-decoration: none; margin-left: 6px; font-size: 14px; }
@@ -40,7 +45,7 @@
 <div class="page">
   <table>
     <colgroup><col style="width:30%"><col style="width:26%"><col style="width:16%"><col style="width:28%"></colgroup>
-    <tr><td colspan="4" class="cap" style="border-bottom:1px solid #222;">支援計画シート　氏名（{{ b.full_name }}）　支援計画者（{{ s.planner }}）<span style="float:right;font-weight:400;">作成日 {{ s.made_on|date:'Y年n月j日' }}</span></td></tr>
+    <tr><td colspan="4" class="cap" style="border-bottom:1px solid #222;font-weight:400;">支　援　計　画　シ　ー　ト　　　氏　名　（　{{ b.full_name }}　）<br>支援計画者（　{{ s.planner }}　）</td></tr>
     <tr><th>インテーク<br>（情報の収集・整理）</th><th colspan="2">アセスメント<br>（評価）</th><th>プランニング<br>（支援計画）</th></tr>
     <tr><th>情報<br><small>（見たこと、聴いたこと、資料などから）</small></th><th>理解・解釈・仮説<br><small>（わかったこと、推測したこと）</small></th><th>支援課題<br><small>（支援の必要なこと）</small></th><th>対応・方針<br><small>（やろうと思うこと）</small></th></tr>
     <tr class="main">
@@ -63,15 +68,16 @@
       </td>
     </tr>
   </table>
+  <div class="foot1"><span></span><span class="m">支援計画シート（様式）</span><span class="r">令和　{{ reiwa }}　年　{{ s.made_on.month }}　月　{{ s.made_on.day }}　日</span></div>
 </div>
 
 <div class="page">
-  <h1>支援手順書 兼 記録用紙</h1>
-  <table class="head">
+  <h1 style="font-weight:400;">支援手順書　兼　記録用紙（様式）</h1>
+  <table class="head box2">
     <colgroup><col style="width:13%"><col style="width:22%"><col style="width:13%"><col style="width:17%"><col style="width:12%"><col style="width:23%"></colgroup>
     <tr><td class="lbl">利用者名</td><td>{{ b.full_name }}</td><td class="lbl">サービス提供日</td><td colspan="1">{% if s.service_date %}{{ s.service_date|date:'Y年n月j日' }}{% endif %}</td><td class="lbl">作成者名</td><td>{{ s.planner }}</td></tr>
   </table>
-  <table class="head" style="margin-top:-1px;">
+  <table class="head box2" style="margin-top:-2px;">
     <colgroup><col style="width:13%"><col style="width:22%"><col style="width:11%"><col style="width:15%"><col style="width:8%"><col style="width:12%"><col style="width:9%"><col style="width:10%"></colgroup>
     {% for p in providers %}
     <tr><td class="lbl">事業所名{{ marks|slice:forloop.counter|last }}</td><td>{{ p.office }}</td><td class="lbl">サービス名</td><td>{{ p.service }}</td><td class="lbl">時間</td><td>{{ p.time }}</td><td class="lbl">提供者名</td><td>{{ p.staff }}</td></tr>
@@ -82,9 +88,9 @@
     <colgroup><col style="width:10%"><col style="width:8%"><col style="width:45%"><col style="width:2%"><col style="width:8%"><col style="width:27%"></colgroup>
     <tr><th>時間</th><th>活動</th><th>サービス手順</th><td class="gap"></td><th>チェック</th><th>様子</th></tr>
     {% for st in steps %}
-    <tr><td class="pre">{{ st.time }}</td><td class="pre">{{ st.activity }}</td><td class="pre">{{ st.procedure }}</td><td class="gap"></td><td class="c" style="font-size:15px;">{% if st.check %}✓{% endif %}</td><td class="pre">{{ st.note }}</td></tr>
+    <tr><td class="pre dash">{{ st.time }}</td><td class="pre dash">{{ st.activity }}</td><td class="pre dash">{{ st.procedure }}</td><td class="gap"></td><td class="c dash" style="font-size:15px;">{% if st.check %}✓{% endif %}</td><td class="pre dash">{{ st.note }}</td></tr>
     {% endfor %}
-    {% for _ in blank_steps %}<tr><td></td><td></td><td></td><td class="gap"></td><td></td><td></td></tr>{% endfor %}
+    {% for _ in blank_steps %}<tr><td class="dash"></td><td class="dash"></td><td class="dash"></td><td class="gap"></td><td class="dash"></td><td class="dash"></td></tr>{% endfor %}
   </table>
 
   <div class="notes"><b>【連絡事項】</b><div class="pre">{{ s.contact_note }}</div><br><b>【問い合わせ事項】</b><div class="pre">{{ s.inquiry_note }}</div></div>

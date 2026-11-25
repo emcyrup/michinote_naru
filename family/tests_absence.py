@@ -64,6 +64,9 @@ class AbsenceRecordTests(Base):
         for text in ('欠席時対応記録', '☑</b>体調等に対する支援をした', '☐</b>家庭内における過ごし方を助言した', '☑</b>電話',
                      '☑</b>体調不良', '☐</b>通院', '熱が下がるまで休む', '担当A', '11/22', '8:30'):
             self.assertIn(text, pr)
+        self.assertIn('氏名<span>見本 太郎</span>', pr)                            # 成の様式：氏名・1 枚に 3 件
+        self.assertEqual(pr.count('class="rec"'), 3)
+        self.assertEqual(pr.count('熱が下がるまで休む'), 1)
         # 実績記録票：該当 → 【欠席】・該当しない → 【−】
         month = reverse('schedules:jisseki_month', args=[self.taro.pk, self.day.year, self.day.month])
         self.assertContains(self.sc.get(month), '【欠席】')

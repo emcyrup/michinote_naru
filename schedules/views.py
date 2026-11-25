@@ -342,6 +342,28 @@ class JissekiDayView(JissekiMixin, View):
         return redirect(back)
 
 
+class JissekiPrintView(JissekiMixin, View):
+    """実績記録票の印刷（様式５）。子ども 1 人か、その月に来た子の全員（beneficiary_pk なし）"""
+
+    def get(self, request, year, month, beneficiary_pk=None):
+        from . import jisseki_print
+        facility = request.user.facility
+        month_or_404(year, month)
+        if beneficiary_pk:
+            children = [get_object_or_404(Beneficiary, pk=beneficiary_pk, facility=facility)]
+        else:
+            import calendar as _cal
+            first, last = date(year, month, 1), date(year, month, _cal.monthrange(year, month)[1])
+            ids = ScheduledVisit.objects.filter(facility=facility, date__range=(first, last)).values_list('beneficiary_id', flat=True)
+            children = list(Beneficiary.objects.filter(facility=facility, pk__in=set(ids))
+                            .order_by('last_name_kana', 'first_name_kana', 'pk'))
+        sheets = [jisseki_print.sheet(facility, c, year, month) for c in children]
+        sheets = [s for s in sheets if beneficiary_pk or any(p['rows'] for p in s['pages'])]
+        return render(request, 'schedules/jisseki_print.html', {
+            'sheets': sheets, 'facility': facility, 'year': year, 'month': month, 'reiwa': year - 2018,
+            'back': request.GET.get('back', ''), 'one': children[0] if beneficiary_pk else None})
+
+
 class JissekiMonthView(JissekiMixin, View):
     """実績記録票（子ども 1 人の 1 か月ぶん）：来所予定のある日と時間。ここでも直せる"""
 

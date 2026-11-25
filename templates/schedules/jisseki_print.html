@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>実績記録票 {% if one %}{{ one.full_name }} {% endif %}{{ year }}-{{ month }}</title>
+{# 放課後等デイサービス提供実績記録票（様式５）。成のいまの様式（Excel）の並びに合わせる #}
+<style>
+  body { font-family: "BIZ UDPGothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #000; margin: 0; padding: 20px; font-size: 9px; line-height: 1.25; background: #fff; }
+  .page { width: 190mm; margin: 0 auto 24px; }
+  .page + .page { break-before: page; page-break-before: always; }
+  .top { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: end; margin-bottom: 4px; }
+  .top .ym { font-size: 11px; }
+  .top h1 { font-size: 15px; font-weight: 400; text-align: center; margin: 0; letter-spacing: .05em; }
+  .top .form { text-align: right; font-size: 8px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  td, th { border: 1px solid #000; padding: 1px 2px; text-align: center; vertical-align: middle; font-weight: 400; }
+  .head td { height: 20px; }
+  .box { width: 3.2%; }
+  .lbl { font-size: 8px; }
+  .big { font-size: 11px; }
+  .rows td { height: 7.6mm; }
+  .rows th { font-size: 7.5px; line-height: 1.15; }
+  .rows .d { font-size: 10px; }
+  .sum td { height: 6mm; }
+  .slash { background: linear-gradient(to top right, transparent calc(50% - .5px), #000, transparent calc(50% + .5px)); }
+  .foot { margin-top: 6px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .foot table { width: auto; }
+  .foot td { height: 5mm; padding: 1px 6px; }
+  .pg { border: 1px solid #000; }
+  .toolbar { text-align: right; margin: 0 auto 12px; width: 190mm; font-size: 14px; }
+  .toolbar a, .toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #4e7d89; background: #4e7d89; color: #fff; cursor: pointer; text-decoration: none; margin-left: 6px; font-size: 14px; }
+  .toolbar a.outline { background: #fff; color: #4e7d89; }
+  .toolbar .note { font-size: 12px; color: #666; text-align: left; margin-bottom: 8px; }
+  @page { size: A4 portrait; margin: 10mm; }
+  @media print { .toolbar { display: none; } body { padding: 0; } .page { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <div class="note">算定時間数・保護者等確認欄・備考は空欄です（手書きの欄）。提供形態は、土日祝と学校休業日の区分の日を 2、ほかを 1 にしています。</div>
+  <a class="outline" href="{% if one %}{% url 'schedules:jisseki_month' one.pk year month %}{% if back %}?back={{ back }}{% endif %}{% else %}{% url 'schedules:jisseki' %}{% if back %}?date={{ back }}{% endif %}{% endif %}">もどる</a>
+  <button type="button" id="print-btn">印刷する</button>
+</div>
+{% for s in sheets %}{% for pg in s.pages %}
+<div class="page">
+  <div class="top">
+    <div class="ym">令和　{{ reiwa }}　年　{{ month }}　月分</div>
+    <h1>放課後等デイサービス提供実績記録票</h1>
+    <div class="form">（様式５）</div>
+  </div>
+  <table class="head">
+    <colgroup><col style="width:9%">{% for _ in s.cert_digits %}<col class="box">{% endfor %}<col style="width:10%"><col style="width:10%"><col style="width:9%">{% for _ in s.office_digits %}<col class="box">{% endfor %}</colgroup>
+    <tr>
+      <td class="lbl">受給者証<br>番　　号</td>{% for c in s.cert_digits %}<td class="big">{{ c }}</td>{% endfor %}
+      <td class="lbl">契約支給量</td><td class="big">{{ s.granted_days }}　日/月</td>
+      <td class="lbl">事業所番号</td>{% for c in s.office_digits %}<td class="big">{{ c }}</td>{% endfor %}
+    </tr>
+    <tr>
+      <td class="lbl" style="height:30px;">給付決定保護者氏名<br>(障害児氏名)</td>
+      <td colspan="12" class="big" style="text-align:left;padding-left:6px;">{{ s.guardian_name }}{% if s.guardian_name %}　{% endif %}（{{ s.child.full_name }}）</td>
+      <td class="lbl">事業者及び<br>その事業所</td>
+      <td colspan="10" class="big">放課後等デイサービス<br>{{ facility.name }}</td>
+    </tr>
+  </table>
+
+  <table class="rows" style="margin-top:6px;">
+    <colgroup>
+      <col style="width:5%"><col style="width:4.5%"><col style="width:9%"><col style="width:6%"><col style="width:8.5%"><col style="width:8.5%"><col style="width:5.5%">
+      <col style="width:3.8%"><col style="width:3.8%"><col style="width:5.2%"><col style="width:5.2%"><col style="width:5.2%"><col style="width:5.2%"><col style="width:8.6%"><col style="width:11%">
+    </colgroup>
+    <tr><th rowspan="3">日<br>付</th><th rowspan="3">曜<br>日</th><th colspan="11">サービス提供実績</th><th rowspan="3">保護者等<br>確認欄</th><th rowspan="3">備考</th></tr>
+    <tr><th rowspan="2">サービス提供の状況</th><th rowspan="2">提供形態</th><th rowspan="2">開始時間</th><th rowspan="2">終了時間</th><th rowspan="2">算定<br>時間数</th><th colspan="2">送迎加算</th>
+        <th rowspan="2">家族支援<br>加算</th><th rowspan="2">延長支援<br>加算</th><th rowspan="2">集中的<br>支援加算</th><th rowspan="2">専門的支援<br>加算<br>（支援実施時）</th></tr>
+    <tr><th>往</th><th>復</th></tr>
+    {% for r in pg.rows %}
+    <tr><td class="d">{{ r.date.day }}</td><td class="d">{{ r.weekday }}</td><td class="d">{{ r.state }}</td><td class="d">{{ r.form }}</td>
+        <td class="d">{{ r.start|time:'G:i' }}</td><td class="d">{{ r.end|time:'G:i' }}</td><td></td>
+        <td class="d">{{ r.pickup }}</td><td class="d">{{ r.dropoff }}</td><td class="d">{{ r.family }}</td><td class="d">{{ r.extend }}</td><td class="d">{{ r.intensive }}</td><td class="d">{{ r.special }}</td><td></td><td></td></tr>
+    {% endfor %}
+    {% for _ in pg.blank %}<tr>{% for _ in "123456789012345" %}<td></td>{% endfor %}</tr>{% endfor %}
+    <tr class="sum">
+      <td colspan="7">合計</td>
+      {% if forloop.last %}
+      <td>{{ s.totals.pickup }}回</td><td>{{ s.totals.dropoff }}回</td><td>{{ s.totals.family }}回</td><td>{{ s.totals.extend }}回</td><td>{{ s.totals.intensive }}回</td><td>{{ s.totals.special }}回</td>
+      {% else %}<td>回</td><td>回</td><td>回</td><td>回</td><td>回</td><td>回</td>{% endif %}
+      <td class="slash"></td><td></td>
+    </tr>
+  </table>
+
+  <div class="foot">
+    <table>
+      <tr><td>保育・教育等移行支援加算</td><td>移行日</td><td style="width:22mm;"></td><td>移行後算定日</td><td style="width:22mm;"></td></tr>
+      <tr><td>集中的支援加算</td><td>支援開始日</td><td style="width:22mm;"></td></tr>
+    </table>
+    <table class="pg"><tr><td>{{ s.page_count }}</td><td>枚中</td><td>{{ pg.no }}</td><td>枚</td></tr></table>
+  </div>
+</div>
+{% endfor %}{% empty %}
+<div class="page"><p style="font-size:14px;">この月に載せる日がありません。</p></div>
+{% endfor %}
+<script>document.getElementById('print-btn').addEventListener('click', function () { window.print(); });</script>
+</body>
+</html>
