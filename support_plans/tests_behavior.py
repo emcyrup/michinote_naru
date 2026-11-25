@@ -76,6 +76,8 @@ class BehaviorSheetTests(TestCase):
         new = BehaviorSheet.objects.exclude(pk=sheet.pk).get()
         self.assertRedirects(res, reverse('support_plans:behavior_edit', args=[new.pk]))
         self.assertEqual(new.intake, '・11歳 自閉症')
+        sheet.refresh_from_db()
+        self.assertEqual(sheet.steps[0]['check'], '1')                                  # チェックは印だけ
         self.assertEqual((new.steps[0]['check'], new.steps[0]['note']), ('', ''))        # 記録の欄は空に
         self.client.post(reverse('support_plans:behavior_delete', args=[sheet.pk]))
         self.assertEqual(list(BehaviorSheet.objects.values_list('pk', flat=True)), [new.pk])

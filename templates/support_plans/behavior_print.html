@@ -82,7 +82,7 @@
     <colgroup><col style="width:10%"><col style="width:8%"><col style="width:45%"><col style="width:2%"><col style="width:8%"><col style="width:27%"></colgroup>
     <tr><th>時間</th><th>活動</th><th>サービス手順</th><td class="gap"></td><th>チェック</th><th>様子</th></tr>
     {% for st in steps %}
-    <tr><td class="pre">{{ st.time }}</td><td class="pre">{{ st.activity }}</td><td class="pre">{{ st.procedure }}</td><td class="gap"></td><td class="c">{{ st.check }}</td><td class="pre">{{ st.note }}</td></tr>
+    <tr><td class="pre">{{ st.time }}</td><td class="pre">{{ st.activity }}</td><td class="pre">{{ st.procedure }}</td><td class="gap"></td><td class="c" style="font-size:15px;">{% if st.check %}✓{% endif %}</td><td class="pre">{{ st.note }}</td></tr>
     {% endfor %}
     {% for _ in blank_steps %}<tr><td></td><td></td><td></td><td class="gap"></td><td></td><td></td></tr>{% endfor %}
   </table>

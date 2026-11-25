@@ -1,7 +1,7 @@
 """保護者ページの部品：だれの子か・リンクを作る・LINE で案内する"""
 import datetime
 
-from django.db import transaction
+from django.db import models, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -294,8 +294,12 @@ def book_rows(facility, day):
     for n in ParentNote.objects.filter(facility=facility, date=day).select_related('beneficiary'):
         notes.setdefault(n.beneficiary_id, []).append(n)
 
+    pending = pending_note_children(facility)       # ほかの日の、まだ連絡帳を返していない保護者の文
+
     def row(child, visit):
-        return {'beneficiary': child, 'visit': visit, 'book': books.get(child.pk), 'notes': len(notes.get(child.pk, []))}
+        # 「保護者より」の印：その日の文か、まだ返していない文があれば
+        return {'beneficiary': child, 'visit': visit, 'book': books.get(child.pk),
+                'notes': len(notes.get(child.pk, [])) or pending.get(child.pk, 0)}
 
     listed = {v.beneficiary_id for v in coming} | {v.beneficiary_id for v in absent}
     extra = {}
@@ -313,3 +317,45 @@ def book_rows(facility, day):
     for r in absent_rows:
         r['absence'] = done.get(r['beneficiary'].pk)
     return [row(v.beneficiary, v) for v in coming], absent_rows, extra_rows
+
+
+# 保護者からの連絡帳（ParentNote）は、事業所からの連絡帳を送るまで、どの日の画面にも出し続ける（2026-11-25 成の要望）
+PENDING_NOTE_DAYS = 31
+
+
+def _answered(note, sent_books):
+    """その文のあとに、その日かそれより後の日付の連絡帳を送っていれば「返した」"""
+    return any(b.date >= note.date and b.sent_at and b.sent_at >= note.created_at for b in sent_books)
+
+
+def notes_for_book(facility, child, day):
+    """
+    連絡帳を書く画面に出す、保護者からの文：その日の文（いつも）と、ほかの日の文でまだ連絡帳を送っていないもの。
+    返り値：(その日の文, ほかの日のまだの文)
+    """
+    since = timezone.now() - datetime.timedelta(days=PENDING_NOTE_DAYS)
+    notes = list(ParentNote.objects.filter(facility=facility, beneficiary=child)
+                 .filter(models.Q(date=day) | models.Q(created_at__gte=since)).order_by('date', 'created_at'))
+    sent = list(ContactBook.objects.filter(facility=facility, beneficiary=child, status=ContactBook.STATUS_SENT,
+                                           sent_at__gte=since - datetime.timedelta(days=1)))
+    same = [n for n in notes if n.date == day]
+    other = [n for n in notes if n.date != day and not _answered(n, sent)]
+    return same, other
+
+
+def pending_note_children(facility):
+    """まだ連絡帳を返していない保護者の文がある子 {利用者の番号: 件数}（一覧の「保護者より」の印に使う）"""
+    since = timezone.now() - datetime.timedelta(days=PENDING_NOTE_DAYS)
+    notes = list(ParentNote.objects.filter(facility=facility, created_at__gte=since))
+    if not notes:
+        return {}
+    sent = {}
+    for b in ContactBook.objects.filter(facility=facility, status=ContactBook.STATUS_SENT,
+                                        beneficiary_id__in={n.beneficiary_id for n in notes},
+                                        sent_at__gte=since - datetime.timedelta(days=1)):
+        sent.setdefault(b.beneficiary_id, []).append(b)
+    out = {}
+    for n in notes:
+        if not _answered(n, sent.get(n.beneficiary_id, [])):
+            out[n.beneficiary_id] = out.get(n.beneficiary_id, 0) + 1
+    return out
