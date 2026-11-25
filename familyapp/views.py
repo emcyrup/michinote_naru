@@ -359,13 +359,27 @@ class CalendarView(FamilyView):
     def post(self, request):
         year, month = yotei.parse_ym(request.POST.get('ym'))
         ym = f'{year}-{month:02d}'
-        days = yotei.clean_days(request.POST.getlist('dates'), request_window())
-        if not days:
+        window = request_window()
+        days = yotei.clean_days(request.POST.getlist('dates'), window)
+        # 利用曜日（児童台帳）の日で選んでいない日は、「利用」か「都合欠」かを必ず選んでもらう（2026-11-25 成の要望）
+        first, last = yotei.month_span(year, month)
+        missing = yotei.missing_regular_days(self.facility, self.child, max(first, window[0]), min(last, window[1]), picked=days)
+        if not days and not missing:
             return redirect(f'{reverse("familyapp:calendar")}?ym={ym}&apply=1&err=1')
-        made, skipped = yotei.apply_days(self.facility, self.child, days, via='parent',
+        choices = {d: request.POST.get(f'choice_{d.isoformat()}') for d in missing}
+        if any(c not in ('use', 'off') for c in choices.values()):
+            asked = request.POST.get('step') == 'confirm'
+            return self.page('familyapp/calendar_confirm.html', ym=ym, days=days, choices=choices,
+                             missing=[{'date': d, 'choice': choices[d]} for d in missing], asked=asked,
+                             status=400 if asked else 200)
+        use = sorted(set(days) | {d for d, c in choices.items() if c == 'use'})
+        off = [d for d, c in choices.items() if c == 'off']
+        made, skipped = yotei.apply_days(self.facility, self.child, use, via='parent',
                                          sender_name=services.sender_label(self.guardian),
                                          account=services.account_of(self.guardian))
-        request.session[self.FLASH] = {'made': [d.isoformat() for d in made], 'skipped': [d.isoformat() for d in skipped]}
+        offs, _ = yotei.apply_personal_off(self.facility, self.child, self.guardian, off)
+        request.session[self.FLASH] = {'made': [d.isoformat() for d in made], 'skipped': [d.isoformat() for d in skipped],
+                                       'off': [m.target_date.isoformat() for m in offs]}
         return redirect(f'{reverse("familyapp:calendar")}?ym={ym}&done=1')
 
 

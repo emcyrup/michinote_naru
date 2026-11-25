@@ -1,0 +1,40 @@
+{% extends 'familyapp/base.html' %}
+{% block title %}利用日申請 — 選んでいない日{% endblock %}
+{% block extra_css %}
+<style>
+  .rc-list { list-style: none; margin: 0; padding: 0; }
+  .rc-list li { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid #eee9e0; flex-wrap: wrap; }
+  .rc-list li:first-child { border-top: 0; }
+  .rc-day { font-weight: 700; font-size: 1.1rem; min-width: 5.5em; }
+  .rc-opt { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #d8d2c6; border-radius: 10px; background: #fff; font-weight: 700; cursor: pointer; margin: 0; }
+  .rc-opt input { width: 22px; height: 22px; }
+  .rc-opt.off:has(input:checked) { background: #fde8e6; border-color: #b3261e; color: #b3261e; }
+  .rc-opt.use:has(input:checked) { background: #e3f3e6; border-color: #1e6b33; color: #1e6b33; }
+  .rc-li-miss { background: #fff5f4; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fm-title"><a href="{% url 'familyapp:calendar' %}?ym={{ ym }}&apply=1" aria-label="カレンダーへもどる"><i class="bi bi-chevron-left"></i></a>利用日を申請する</div>
+
+<div class="alert alert-danger">
+  {% for m in missing %}{{ m.date|date:'j日(D)' }}{% if not forloop.last %}、{% endif %}{% endfor %}が選択されていません。チェックを入れて送信ボタンを押してください。
+  {% if asked %}<div class="mt-1 fw-bold">まだ選んでいない日があります。すべての日に「都合欠」か「利用」を選んでください。</div>{% endif %}
+</div>
+
+<form method="post" class="fm-card" id="rc-form">
+  {% csrf_token %}<input type="hidden" name="ym" value="{{ ym }}"><input type="hidden" name="step" value="confirm">
+  {% for d in days %}<input type="hidden" name="dates" value="{{ d|date:'Y-m-d' }}">{% endfor %}
+  <ul class="rc-list">
+    {% for m in missing %}
+    <li class="{% if asked and not m.choice %}rc-li-miss{% endif %}">
+      <span class="rc-day">{{ m.date|date:'j日(D)' }}</span>
+      <label class="rc-opt off"><input type="radio" name="choice_{{ m.date|date:'Y-m-d' }}" value="off" required{% if m.choice == 'off' %} checked{% endif %}> 都合欠</label>
+      <label class="rc-opt use"><input type="radio" name="choice_{{ m.date|date:'Y-m-d' }}" value="use"{% if m.choice == 'use' %} checked{% endif %}> 利用</label>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if days %}<div class="fm-meta mt-2">カレンダーで選んだ日（利用）：{% for d in days %}{{ d|date:'j日(D)' }}{% if not forloop.last %}、{% endif %}{% endfor %}</div>{% endif %}
+  <button type="submit" class="fm-btn mt-3">送信</button>
+  <div class="text-center mt-2"><a href="{% url 'familyapp:calendar' %}?ym={{ ym }}&apply=1" class="fm-meta">カレンダーにもどって選び直す</a></div>
+</form>
+{% endblock %}
