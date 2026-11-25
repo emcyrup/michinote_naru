@@ -333,4 +333,8 @@ def day_info(facility, day, child=None):
         v = ScheduledVisit.objects.filter(facility=facility, beneficiary=child, date=day).first()
         info['use'] = bool(v and v.status != ScheduledVisit.STATUS_ABSENT)
         info['absent'] = bool(v and v.status == ScheduledVisit.STATUS_ABSENT)
+        # 予定は無いが欠席の連絡がある日（利用日申請で「都合欠」を選んだ日など）：'都合欠' か '欠席'
+        reason = None if v else FamilyMessage.objects.filter(
+            facility=facility, beneficiary=child, kind=FamilyMessage.KIND_ABSENCE, target_date=day).values_list('reason', flat=True).first()
+        info['off'] = '' if reason is None else ('都合欠' if reason == FamilyMessage.REASON_PERSONAL else '欠席')
     return info

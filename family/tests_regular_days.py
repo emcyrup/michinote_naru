@@ -40,6 +40,7 @@ class RegularDaysTests(Base):
         cell = next(c for w in view['weeks'] for c in w if c.get('iso') == day.isoformat())
         self.assertEqual(cell['off'], '都合欠')
         self.assertFalse(cell['can_pick'])
+        self.assertEqual(yotei.day_info(self.f, day, child=self.taro)['off'], '都合欠')
         staff = self.client_class()
         staff.force_login(self.staff)
         from django.urls import reverse
