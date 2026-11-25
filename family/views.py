@@ -506,8 +506,10 @@ class StaffBookEditView(LoginRequiredMixin, View):
             journal_text = (rec.parent_message_draft or '').strip() if rec else ''
         except Exception:  # noqa: BLE001
             journal_text = ''
+        notes, older_notes = services.notes_for_book(self.facility, self.child, self.day)
+        from django.conf import settings
         return {**day_nav(self.day), 'b': self.child, 'book': book,
-                'notes': ParentNote.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day),
+                'notes': notes, 'older_notes': older_notes, 'ai_ok': bool(settings.ANTHROPIC_API_KEY),
                 'visit': ScheduledVisit.objects.filter(facility=self.facility, beneficiary=self.child, date=self.day).first(),
                 'line_linked': self.child.guardians.filter(line_linked=True).exists(),
                 'journal_text': journal_text, 'body_max': ContactBook.BODY_MAX,
@@ -547,6 +549,64 @@ class StaffBookEditView(LoginRequiredMixin, View):
         else:
             messages.info(request, '内容が変わっていないので、送り直していません。')
         return redirect(f'{reverse("family:staff_book")}?date={self.day.isoformat()}')
+
+
+class StaffBookAiView(StaffBookEditView):
+    """
+    連絡帳の文を AI で作る（JSON）。action：
+      viewpoints … {activity} → {viewpoints:[{text, answer}]}（評価して文章作成の観点）
+      write      … {memo, activity, viewpoints} → {result}（メモ書きから・評価して）
+    お試しの回数は 1 回分ずつ
+    """
+
+    def get(self, request, beneficiary_pk):
+        raise Http404
+
+    def post(self, request, beneficiary_pk):
+        import json
+
+        from django.conf import settings
+        from django.http import JsonResponse
+
+        from ai_assist import trial
+
+        from . import book_ai
+        self.setup_objects(request, beneficiary_pk)
+        if not settings.ANTHROPIC_API_KEY:
+            return JsonResponse({'error': 'AIを使う設定（ANTHROPIC_API_KEY）がサーバーにありません。'}, status=500)
+        over = trial.check(self.facility)
+        if over:
+            return JsonResponse({'error': over}, status=403)
+        try:
+            data = json.loads(request.body.decode('utf-8') or '{}')
+        except (ValueError, UnicodeDecodeError):
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        action = data.get('action')
+        memo = str(data.get('memo', '')).strip()[:book_ai.MEMO_MAX]
+        activity = str(data.get('activity', '')).strip()[:book_ai.ACTIVITY_MAX]
+        if action == 'viewpoints':
+            if not activity:
+                return JsonResponse({'error': '活動（例：公園で散歩）を入れてから押してください。'}, status=400)
+            points, error = book_ai.viewpoints(activity)
+            if error is not None:
+                return error
+            if not points:
+                return JsonResponse({'error': '観点を作れませんでした。もう一度お試しください。'}, status=502)
+            trial.use(self.facility)
+            return JsonResponse({'viewpoints': points})
+        if action != 'write':
+            return JsonResponse({'error': '操作が分かりませんでした。'}, status=400)
+        points = book_ai.clean_viewpoints(data.get('viewpoints'))
+        if not memo and not any(p['answer'] for p in points):
+            return JsonResponse({'error': 'メモを書くか、観点に「はい／いいえ」を付けてから押してください。'}, status=400)
+        text, error = book_ai.write(self.child, memo=memo, activity=activity, points=points)
+        if error is not None:
+            return error
+        if not text:
+            return JsonResponse({'error': 'AI が文を返しませんでした。もう一度お試しください。'}, status=502)
+        trial.use(self.facility)
+        return JsonResponse({'result': text[:ContactBook.BODY_MAX]})
 
 
 class StaffAbsenceView(LoginRequiredMixin, View):

@@ -22,6 +22,7 @@ urlpatterns = [
     # 職員（ログイン）
     path('staff/book/', views.StaffBookListView.as_view(), name='staff_book'),
     path('staff/book/<int:beneficiary_pk>/', views.StaffBookEditView.as_view(), name='staff_book_edit'),
+    path('staff/book/<int:beneficiary_pk>/ai/', views.StaffBookAiView.as_view(), name='staff_book_ai'),
     path('staff/absence/<int:beneficiary_pk>/', views.StaffAbsenceView.as_view(), name='staff_absence'),
     path('staff/absence/<int:beneficiary_pk>/print/', views.StaffAbsencePrintView.as_view(), name='staff_absence_print'),
     path('staff/calendar/', views.StaffCalendarView.as_view(), name='staff_calendar'),

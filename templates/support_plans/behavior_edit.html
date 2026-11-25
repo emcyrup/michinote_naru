@@ -22,14 +22,17 @@
   .bs-task { border: 1px solid #eee9e0; border-radius: 10px; padding: 10px; margin-top: 8px; background: #fcfbf9; }
   .bs-task .no { font-weight: 700; color: #4d7ba8; margin-right: 6px; }
   .bs-step { border: 1px solid #eee9e0; border-radius: 10px; padding: 10px; margin-top: 8px; background: #fcfbf9; }
-  .bs-step-top { display: grid; grid-template-columns: 7.5em 1fr 5em; gap: 8px; }
+  .bs-step-top { display: grid; grid-template-columns: 7.5em 1fr; gap: 8px; }
+  .bs-check { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin: 0 0 12px; padding: 6px 14px 6px 10px; border: 1px solid #cfc8bb; border-radius: 10px; background: #fff; cursor: pointer; }
+  .bs-check input { width: 22px; height: 22px; }
+  .bs-check:has(input:checked) { background: #e3f3e6; border-color: #1e6b33; }
   .bs-add { margin-top: 8px; border: 1px dashed #4d7ba8; background: #f5f9fe; color: #2f5f8f; font-size: .88rem; padding: 6px 12px; border-radius: 8px; font-weight: 700; }
   .bs-prov { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1.2fr; gap: 6px; margin-bottom: 6px; }
   .bs-help { font-size: .8rem; color: #6b655c; }
   .bs-save { position: sticky; bottom: 0; z-index: 1040; background: rgba(255,255,255,.96); padding: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; }
   .bs-save .btn-primary { flex: 1 1 auto; font-weight: 700; padding: 12px; }
   @media (max-width: 900px) { .bs-save { padding-right: 76px; } }
-  @media (max-width: 560px) { .bs-grid, .bs-prov { grid-template-columns: 1fr 1fr; } .bs-step-top { grid-template-columns: 6.5em 1fr; } .bs-step-top .ck { grid-column: 1 / -1; } }
+  @media (max-width: 560px) { .bs-grid, .bs-prov { grid-template-columns: 1fr 1fr; } .bs-step-top { grid-template-columns: 6.5em 1fr; } }
 </style>
 {% endblock %}
 {% block content %}
@@ -98,10 +101,10 @@
           <div class="bs-step-top">
             <div><label class="f" for="f-step_time_{{ forloop.counter0 }}">時間</label><input type="text" id="f-step_time_{{ forloop.counter0 }}" name="step_time_{{ forloop.counter0 }}" value="{{ st.time }}" maxlength="30" placeholder="14:00-14:30"></div>
             <div><label class="f" for="f-step_activity_{{ forloop.counter0 }}">活動</label><input type="text" id="f-step_activity_{{ forloop.counter0 }}" name="step_activity_{{ forloop.counter0 }}" value="{{ st.activity }}" maxlength="40" placeholder="来所・おやつ・帰り など"></div>
-            <div class="ck"><label class="f" for="f-step_check_{{ forloop.counter0 }}">チェック</label><input type="text" id="f-step_check_{{ forloop.counter0 }}" name="step_check_{{ forloop.counter0 }}" value="{{ st.check }}" maxlength="20"></div>
           </div>
           <label class="f mt-2" for="f-step_procedure_{{ forloop.counter0 }}">サービス手順</label>
           <textarea id="f-step_procedure_{{ forloop.counter0 }}" name="step_procedure_{{ forloop.counter0 }}" rows="3" data-ai="step_procedure_{{ forloop.counter0 }}" data-label="手順{{ forloop.counter }}" placeholder="例：静養室 スケジュール 着替え アラーム9:50 作業室">{{ st.procedure }}</textarea>
+          <label class="bs-check"><input type="checkbox" name="step_check_{{ forloop.counter0 }}" value="1"{% if st.check %} checked{% endif %}> チェック</label>
           <label class="f mt-2" for="f-step_note_{{ forloop.counter0 }}">様子</label>
           <textarea id="f-step_note_{{ forloop.counter0 }}" name="step_note_{{ forloop.counter0 }}" rows="2" data-ai="step_note_{{ forloop.counter0 }}" data-label="様子{{ forloop.counter }}">{{ st.note }}</textarea>
         </div>
