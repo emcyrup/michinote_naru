@@ -109,3 +109,20 @@ class AbsenceRecordTests(Base):
         AbsenceRecord.objects.create(facility=self.f, beneficiary=self.taro, date=self.day)
         AbsenceRecord.objects.create(facility=self.f, beneficiary=self.jiro, date=self.day)
         self.assertTrue(any('欠席時の対応の記録' in c for c in merge.plan(self.taro, self.jiro)['conflicts']))
+
+    def test_absence_message_without_a_visit_is_listed_and_recorded(self):
+        """来所予定の無い日の欠席連絡も、連絡帳の欠席の欄に出る。対応を保存すると欠席の予定ができ、実績記録票に出る"""
+        day = self.day + datetime.timedelta(days=10)
+        FamilyMessage.objects.create(facility=self.f, beneficiary=self.hana, kind=FamilyMessage.KIND_ABSENCE, target_date=day,
+                                     reason=FamilyMessage.REASON_PERSONAL, body='歯医者', sent_on=timezone.localdate())
+        self.assertFalse(ScheduledVisit.objects.filter(beneficiary=self.hana, date=day).exists())
+        url = reverse('family:staff_absence', args=[self.hana.pk]) + f'?date={day.isoformat()}'
+        html = self.sc.get(reverse('family:staff_book') + f'?date={day.isoformat()}').content.decode()
+        self.assertIn('欠席（1 人）', html)
+        self.assertIn(url.replace('&', '&amp;'), html)
+        self.sc.post(reverse('family:staff_absence', args=[self.hana.pk]), {'date': day.isoformat(), 'addon': 'yes'})
+        self.assertEqual(ScheduledVisit.objects.get(beneficiary=self.hana, date=day).status, ScheduledVisit.STATUS_ABSENT)
+        html = self.sc.get(reverse('family:staff_book') + f'?date={day.isoformat()}').content.decode()
+        self.assertEqual(html.count('class="dayitem-name">見本 花子'), 1)                                # 二重に出ない
+        month = reverse('schedules:jisseki_month', args=[self.hana.pk, day.year, day.month])
+        self.assertContains(self.sc.get(month), '【欠席】')

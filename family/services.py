@@ -314,6 +314,16 @@ def book_rows(facility, day):
     from .models import AbsenceRecord
     done = {r.beneficiary_id: r for r in AbsenceRecord.objects.filter(facility=facility, date=day)}
     absent_rows = [row(v.beneficiary, v) for v in absent]
+    # 来所予定は無いが、この日の欠席連絡がある子も、欠席の欄に出す（2026-11-26 成の要望。利用日申請の「都合欠」も）
+    with_visit = {v.beneficiary_id for v in coming} | {v.beneficiary_id for v in absent}
+    off = {}
+    for m in FamilyMessage.objects.filter(facility=facility, kind=FamilyMessage.KIND_ABSENCE, target_date=day,
+                                          beneficiary__isnull=False).select_related('beneficiary'):
+        if m.beneficiary_id not in with_visit:
+            off[m.beneficiary_id] = m.beneficiary
+    absent_rows += [row(c, None) for c in off.values()]
+    absent_rows.sort(key=lambda r: (r['beneficiary'].last_name_kana, r['beneficiary'].first_name_kana, r['beneficiary'].pk))
+    extra_rows = [r for r in extra_rows if r['beneficiary'].pk not in off]
     for r in absent_rows:
         r['absence'] = done.get(r['beneficiary'].pk)
     return [row(v.beneficiary, v) for v in coming], absent_rows, extra_rows
