@@ -102,6 +102,11 @@ def save(facility, child, day, data, staff):
     rec.addon = addon
     rec.updated_by = staff
     rec.save()
+    # 来所予定の無い日（予定を入れる前に欠席の連絡が来た日など）は、欠席の予定として入れる。
+    # 実績記録票（【欠席】／【−】）と請求は来所予定をもとに出すので、ここで作っておく
+    from schedules.models import ScheduledVisit
+    ScheduledVisit.objects.get_or_create(beneficiary=child, date=day,
+                                         defaults={'facility': facility, 'status': ScheduledVisit.STATUS_ABSENT})
     if data.get('remember_staff') and rec.staff_name and rec.staff_name != facility.absence_staff_default:
         facility.absence_staff_default = rec.staff_name
         facility.save(update_fields=['absence_staff_default'])
