@@ -744,6 +744,8 @@ class CalendarTests(Base):
         self.today = timezone.localdate()
         self.d1 = self.today + datetime.timedelta(days=3)
         self.d2 = self.today + datetime.timedelta(days=4)
+        if self.d1.month != self.d2.month:          # 月をまたぐ日（月末の 3 日前）は、2 日とも次の月にそろえる
+            self.d1, self.d2 = self.d2, self.d2 + datetime.timedelta(days=1)
         self.ym = f'{self.d1.year}-{self.d1.month:02d}'
         self.enter()
         self.client.post(reverse('family:child'), {'child': self.taro.pk})

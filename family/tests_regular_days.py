@@ -47,3 +47,17 @@ class RegularDaysTests(Base):
         html = staff.get(reverse('family:staff_inbox') + f'?date={day.isoformat()}').content.decode()
         self.assertIn('欠席（都合欠）', html)
         self.assertIn(yotei.PERSONAL_OFF_BODY, html)
+
+
+class StaffCalendarNoAgendaTests(Base):
+    def test_no_month_agenda_under_the_staff_calendar(self):
+        """職員の「予定」：カレンダーの下の「◯月の予定」の一覧は出さない（保護者アプリと同じ。2026-11-27 成の要望）"""
+        from django.urls import reverse
+        day = timezone.localdate().replace(day=15)
+        yotei.save_event(self.f, day, 'クッキング', False, '持ち物：エプロン', self.staff)
+        c = self.client_class()
+        c.force_login(self.staff)
+        html = c.get(reverse('family:staff_calendar')).content.decode()
+        self.assertIn('クッキング', html)                      # カレンダーの中には出る
+        self.assertNotIn(f'{day.month}月の予定', html)
+        self.assertNotIn('<ul class="cal-agenda"', html)

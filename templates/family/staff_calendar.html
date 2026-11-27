@@ -135,19 +135,6 @@
     <a href="{% url 'family:staff_apply' %}?ym={{ ym }}" class="btn btn-outline-primary"><i class="bi bi-calendar-plus"></i> 代わりに利用日を申請する</a>
   </div>
 
-  {% if agenda %}
-  <div class="daylist-head">{{ month }}月の予定</div>
-  <ul class="cal-agenda">
-    {% for c in agenda %}
-    <li><a href="{{ cal_day_base }}{{ c.iso }}/">
-      <span class="d">{{ c.date|date:'j日' }}（{{ c.weekday }}）</span>
-      <span class="t{% if c.is_closed %} is-closed{% endif %}">{{ c.label|default:'（詳しい内容あり）' }}{% if c.has_detail %} <small><i class="bi bi-info-circle-fill"></i></small>{% endif %}</span>
-      <i class="bi bi-chevron-right text-muted"></i>
-    </a></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
   <div class="text-center mt-3 small">
     {% if features.schedule %}<a href="{% url 'schedules:calendar_month' year month %}">出欠・来所予定のまとめ作成へ</a>{% endif %}
     {% if features.home_icons %}<span class="mx-2 text-muted">|</span><a href="{% url 'facilities:home_icons' %}"><i class="bi bi-chevron-left"></i> ホームへ</a>{% endif %}
